@@ -1,0 +1,8 @@
+gotermsql
+bin/
+dist/
+*.exe
+*.dll
+*.so
+*.dylib
+.DS_Store
