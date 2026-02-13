@@ -18,9 +18,8 @@ type (
 	ExecuteQueryMsg    = appmsg.ExecuteQueryMsg
 	QueryStartedMsg    = appmsg.QueryStartedMsg
 	QueryResultMsg     = appmsg.QueryResultMsg
-	QueryErrMsg        = appmsg.QueryErrMsg
-	StreamingResultMsg = appmsg.StreamingResultMsg
-	NewTabMsg          = appmsg.NewTabMsg
+	QueryErrMsg = appmsg.QueryErrMsg
+	NewTabMsg   = appmsg.NewTabMsg
 	CloseTabMsg        = appmsg.CloseTabMsg
 	SwitchTabMsg       = appmsg.SwitchTabMsg
 	StatusMsg          = appmsg.StatusMsg

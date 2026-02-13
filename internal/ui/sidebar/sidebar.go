@@ -50,7 +50,6 @@ type Model struct {
 	width   int
 	height  int
 	focused bool
-	filter  string
 	loading bool
 }
 
@@ -263,9 +262,9 @@ func (m *Model) toggleOrSelect() tea.Cmd {
 
 	// For table nodes, generate a SELECT query
 	if node.Kind == NodeTable {
-		tableName := node.Table
+		tableName := quoteIdentifier(node.Table)
 		if node.Schema != "" && node.Schema != "main" {
-			tableName = node.Schema + "." + node.Table
+			tableName = quoteIdentifier(node.Schema) + "." + tableName
 		}
 		query := fmt.Sprintf("SELECT * FROM %s LIMIT 100;", tableName)
 		return func() tea.Msg {
@@ -328,6 +327,12 @@ func (m Model) Focused() bool { return m.focused }
 
 // SetLoading sets the loading state.
 func (m *Model) SetLoading(loading bool) { m.loading = loading }
+
+// quoteIdentifier wraps a SQL identifier in double-quotes (ANSI style),
+// escaping any embedded double-quotes by doubling them.
+func quoteIdentifier(s string) string {
+	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
+}
 
 func buildTree(databases []schema.Database) []*TreeNode {
 	var nodes []*TreeNode

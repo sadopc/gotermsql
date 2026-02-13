@@ -439,7 +439,7 @@ func TestToggleOrSelect_Table(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected NewTabMsg, got %T", msg)
 	}
-	if newTabMsg.Query != "SELECT * FROM simple_table LIMIT 100;" {
+	if newTabMsg.Query != `SELECT * FROM "simple_table" LIMIT 100;` {
 		t.Fatalf("unexpected query: %q", newTabMsg.Query)
 	}
 }
@@ -499,7 +499,7 @@ func TestToggleOrSelect_TableWithSchema(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected NewTabMsg, got %T", msg)
 	}
-	expected := "SELECT * FROM custom_schema.my_table LIMIT 100;"
+	expected := `SELECT * FROM "custom_schema"."my_table" LIMIT 100;`
 	if newTabMsg.Query != expected {
 		t.Fatalf("expected query %q, got %q", expected, newTabMsg.Query)
 	}

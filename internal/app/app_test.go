@@ -261,8 +261,8 @@ func TestInit(t *testing.T) {
 	cfg := config.DefaultConfig()
 	m := New(cfg, nil)
 	cmd := m.Init()
-	if cmd == nil {
-		t.Error("Init() should return a non-nil command (spinner tick)")
+	if cmd != nil {
+		t.Error("Init() should return nil (no background tasks)")
 	}
 }
 

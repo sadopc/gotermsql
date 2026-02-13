@@ -562,8 +562,13 @@ func (c *mysqlConn) executeSelectOnConn(ctx context.Context, conn *sql.Conn, que
 
 	var resultRows [][]string
 	nCols := len(columns)
+	truncated := false
 
 	for rows.Next() {
+		if len(resultRows) >= adapter.DefaultMaxRows {
+			truncated = true
+			break
+		}
 		values := make([]sql.NullString, nCols)
 		ptrs := make([]any, nCols)
 		for i := range values {
@@ -587,11 +592,12 @@ func (c *mysqlConn) executeSelectOnConn(ctx context.Context, conn *sql.Conn, que
 	}
 
 	return &adapter.QueryResult{
-		Columns:  columns,
-		Rows:     resultRows,
-		RowCount: int64(len(resultRows)),
-		Duration: time.Since(start),
-		IsSelect: true,
+		Columns:   columns,
+		Rows:      resultRows,
+		RowCount:  int64(len(resultRows)),
+		Duration:  time.Since(start),
+		IsSelect:  true,
+		Truncated: truncated,
 	}, nil
 }
 

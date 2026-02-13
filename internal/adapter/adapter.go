@@ -68,14 +68,20 @@ type RowIterator interface {
 	Close() error
 }
 
+// DefaultMaxRows is the maximum number of rows an adapter should buffer
+// for a single SELECT result. Adapters should stop scanning and set
+// Truncated = true when this limit is reached.
+const DefaultMaxRows = 10000
+
 // QueryResult holds the result of a query execution.
 type QueryResult struct {
-	Columns  []ColumnMeta
-	Rows     [][]string
-	RowCount int64 // -1 if unknown
-	Duration time.Duration
-	IsSelect bool
-	Message  string
+	Columns   []ColumnMeta
+	Rows      [][]string
+	RowCount  int64 // -1 if unknown
+	Duration  time.Duration
+	IsSelect  bool
+	Message   string
+	Truncated bool
 }
 
 // ColumnMeta holds metadata about a result column.

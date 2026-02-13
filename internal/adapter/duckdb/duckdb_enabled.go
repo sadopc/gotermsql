@@ -329,7 +329,12 @@ func (c *duckdbConn) executeSelect(ctx context.Context, query string, start time
 
 	var resultRows [][]string
 	nCols := len(cols)
+	truncated := false
 	for rows.Next() {
+		if len(resultRows) >= adapter.DefaultMaxRows {
+			truncated = true
+			break
+		}
 		vals := make([]sql.NullString, nCols)
 		ptrs := make([]any, nCols)
 		for i := range vals {
@@ -353,11 +358,12 @@ func (c *duckdbConn) executeSelect(ctx context.Context, query string, start time
 	}
 
 	return &adapter.QueryResult{
-		Columns:  cols,
-		Rows:     resultRows,
-		RowCount: int64(len(resultRows)),
-		Duration: time.Since(start),
-		IsSelect: true,
+		Columns:   cols,
+		Rows:      resultRows,
+		RowCount:  int64(len(resultRows)),
+		Duration:  time.Since(start),
+		IsSelect:  true,
+		Truncated: truncated,
 	}, nil
 }
 

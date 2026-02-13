@@ -78,7 +78,11 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		return m, clearAfter()
 
 	case appmsg.QueryErrMsg:
-		m.message = msg.Err.Error()
+		if msg.Err != nil {
+			m.message = msg.Err.Error()
+		} else {
+			m.message = "unknown error"
+		}
 		m.isError = true
 		return m, clearAfter()
 

@@ -3,7 +3,9 @@ package connmgr
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -254,13 +256,14 @@ func (m Model) testConnection(conn config.SavedConnection) tea.Cmd {
 		if !ok {
 			return testResultMsg{err: fmt.Errorf("unknown adapter: %s", conn.Adapter)}
 		}
-		ctx := context.Background()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
 		c, err := a.Connect(ctx, dsn)
 		if err != nil {
 			return testResultMsg{err: err}
 		}
 		err = c.Ping(ctx)
-		c.Close()
+		_ = c.Close()
 		return testResultMsg{err: err}
 	}
 }
@@ -440,5 +443,14 @@ func sanitizeError(msg string) string {
 			msg = msg[:idx+len(prefix)] + "***" + msg[idx+len(prefix)+atIdx:]
 		}
 	}
+	// MySQL driver format: user:pass@tcp(
+	msg = reMySQLCreds.ReplaceAllString(msg, "${1}***@tcp(")
+	// PostgreSQL keyword format: password=xxx
+	msg = rePGPassword.ReplaceAllString(msg, "password=***")
 	return msg
 }
+
+var (
+	reMySQLCreds = regexp.MustCompile(`(\b\w+:)[^@]+@tcp\(`)
+	rePGPassword = regexp.MustCompile(`password=[^\s]+`)
+)

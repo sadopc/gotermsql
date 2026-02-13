@@ -126,12 +126,6 @@ func TestStandardKeyMap(t *testing.T) {
 		}
 	})
 
-	t.Run("OpenHistory has ctrl+h", func(t *testing.T) {
-		requireNonEmpty(t, "OpenHistory", km.OpenHistory)
-		if !containsKey(km.OpenHistory, "ctrl+h") {
-			t.Errorf("OpenHistory keys = %v, want to contain %q", km.OpenHistory.Keys(), "ctrl+h")
-		}
-	})
 }
 
 func TestStandardKeyMap_AllNavigationBindingsHaveKeys(t *testing.T) {
@@ -445,9 +439,9 @@ func TestFullHelp_ContainsAllGroups(t *testing.T) {
 	if len(full[2]) != 4 {
 		t.Errorf("FullHelp group 2 (tabs) length = %d, want 4", len(full[2]))
 	}
-	// Group 3: App (ToggleKeyMode, ToggleSidebar, RefreshSchema, OpenConnMgr, OpenHistory)
-	if len(full[3]) != 5 {
-		t.Errorf("FullHelp group 3 (app) length = %d, want 5", len(full[3]))
+	// Group 3: App (ToggleKeyMode, ToggleSidebar, RefreshSchema, OpenConnMgr)
+	if len(full[3]) != 4 {
+		t.Errorf("FullHelp group 3 (app) length = %d, want 4", len(full[3]))
 	}
 	// Group 4: Resize (ResizeLeft, ResizeRight, ResizeUp, ResizeDown)
 	if len(full[4]) != 4 {
@@ -484,7 +478,6 @@ func TestStandardKeyMap_SpecificKeyValues(t *testing.T) {
 		{"ToggleSidebar", km.ToggleSidebar, "ctrl+b"},
 		{"RefreshSchema", km.RefreshSchema, "ctrl+r"},
 		{"OpenConnMgr", km.OpenConnMgr, "ctrl+o"},
-		{"OpenHistory", km.OpenHistory, "ctrl+h"},
 		{"Export", km.Export, "ctrl+e"},
 		{"CancelQuery", km.CancelQuery, "ctrl+c"},
 		{"ResizeLeft", km.ResizeLeft, "ctrl+left"},

@@ -22,7 +22,6 @@ type DismissMsg struct{}
 
 // Model is the autocomplete dropdown overlay.
 type Model struct {
-	items    []adapter.CompletionItem
 	filtered []adapter.CompletionItem
 	selected int
 	visible  bool

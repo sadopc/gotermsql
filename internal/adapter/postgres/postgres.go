@@ -571,7 +571,12 @@ func (c *pgConn) executeSelect(ctx context.Context, query string, start time.Tim
 	cols := fieldDescToMeta(rows.FieldDescriptions())
 
 	var result [][]string
+	truncated := false
 	for rows.Next() {
+		if len(result) >= adapter.DefaultMaxRows {
+			truncated = true
+			break
+		}
 		vals, err := rows.Values()
 		if err != nil {
 			return nil, fmt.Errorf("execute values: %w", err)
@@ -586,11 +591,12 @@ func (c *pgConn) executeSelect(ctx context.Context, query string, start time.Tim
 	}
 
 	return &adapter.QueryResult{
-		Columns:  cols,
-		Rows:     result,
-		RowCount: int64(len(result)),
-		Duration: time.Since(start),
-		IsSelect: true,
+		Columns:   cols,
+		Rows:      result,
+		RowCount:  int64(len(result)),
+		Duration:  time.Since(start),
+		IsSelect:  true,
+		Truncated: truncated,
 	}, nil
 }
 
@@ -800,7 +806,7 @@ func (it *pgRowIterator) Close() error {
 func (c *pgConn) Completions(ctx context.Context) ([]adapter.CompletionItem, error) {
 	var items []adapter.CompletionItem
 
-	// Schemas
+	// 1. Schemas (single query)
 	schemaRows, err := c.pool.Query(ctx,
 		`SELECT schema_name
 		 FROM information_schema.schemata
@@ -811,13 +817,11 @@ func (c *pgConn) Completions(ctx context.Context) ([]adapter.CompletionItem, err
 	}
 	defer schemaRows.Close()
 
-	var schemas []string
 	for schemaRows.Next() {
 		var name string
 		if err := schemaRows.Scan(&name); err != nil {
 			return nil, fmt.Errorf("completions schemas scan: %w", err)
 		}
-		schemas = append(schemas, name)
 		items = append(items, adapter.CompletionItem{
 			Label:  name,
 			Kind:   adapter.CompletionSchema,
@@ -828,80 +832,68 @@ func (c *pgConn) Completions(ctx context.Context) ([]adapter.CompletionItem, err
 		return nil, err
 	}
 
-	// Tables and views per schema
-	for _, s := range schemas {
-		tableRows, err := c.pool.Query(ctx,
-			`SELECT table_name, table_type
-			 FROM information_schema.tables
-			 WHERE table_schema = $1
-			 ORDER BY table_name`, s)
-		if err != nil {
-			return nil, fmt.Errorf("completions tables: %w", err)
+	// 2. All tables and views (single query)
+	tableRows, err := c.pool.Query(ctx,
+		`SELECT table_schema, table_name, table_type
+		 FROM information_schema.tables
+		 WHERE table_schema NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+		 ORDER BY table_schema, table_name`)
+	if err != nil {
+		return nil, fmt.Errorf("completions tables: %w", err)
+	}
+	defer tableRows.Close()
+
+	for tableRows.Next() {
+		var schema, name, ttype string
+		if err := tableRows.Scan(&schema, &name, &ttype); err != nil {
+			return nil, fmt.Errorf("completions tables scan: %w", err)
 		}
 
-		type tableInfo struct {
-			name      string
-			tableType string
-		}
-		var tables []tableInfo
-
-		for tableRows.Next() {
-			var name, ttype string
-			if err := tableRows.Scan(&name, &ttype); err != nil {
-				tableRows.Close()
-				return nil, fmt.Errorf("completions tables scan: %w", err)
-			}
-			tables = append(tables, tableInfo{name, ttype})
-
-			kind := adapter.CompletionTable
-			detail := "table"
-			if ttype == "VIEW" {
-				kind = adapter.CompletionView
-				detail = "view"
-			}
-
-			label := name
-			if s != "public" {
-				label = s + "." + name
-			}
-			items = append(items, adapter.CompletionItem{
-				Label:  label,
-				Kind:   kind,
-				Detail: detail,
-			})
-		}
-		tableRows.Close()
-		if err := tableRows.Err(); err != nil {
-			return nil, err
+		kind := adapter.CompletionTable
+		detail := "table"
+		if ttype == "VIEW" {
+			kind = adapter.CompletionView
+			detail = "view"
 		}
 
-		// Columns for each table/view
-		for _, t := range tables {
-			colRows, err := c.pool.Query(ctx,
-				`SELECT column_name, data_type
-				 FROM information_schema.columns
-				 WHERE table_schema = $1 AND table_name = $2
-				 ORDER BY ordinal_position`, s, t.name)
-			if err != nil {
-				return nil, fmt.Errorf("completions columns: %w", err)
-			}
-			for colRows.Next() {
-				var cname, ctype string
-				if err := colRows.Scan(&cname, &ctype); err != nil {
-					colRows.Close()
-					return nil, fmt.Errorf("completions columns scan: %w", err)
-				}
-				items = append(items, adapter.CompletionItem{
-					Label:  cname,
-					Kind:   adapter.CompletionColumn,
-					Detail: fmt.Sprintf("%s.%s (%s)", t.name, cname, ctype),
-				})
-			}
-			colRows.Close()
-			if err := colRows.Err(); err != nil {
-				return nil, err
-			}
+		label := name
+		if schema != "public" {
+			label = schema + "." + name
 		}
+		items = append(items, adapter.CompletionItem{
+			Label:  label,
+			Kind:   kind,
+			Detail: detail,
+		})
+	}
+	if err := tableRows.Err(); err != nil {
+		return nil, err
+	}
+
+	// 3. All columns (single query)
+	colRows, err := c.pool.Query(ctx,
+		`SELECT table_name, column_name, data_type
+		 FROM information_schema.columns
+		 WHERE table_schema NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+		 ORDER BY table_schema, table_name, ordinal_position`)
+	if err != nil {
+		return nil, fmt.Errorf("completions columns: %w", err)
+	}
+	defer colRows.Close()
+
+	for colRows.Next() {
+		var tname, cname, ctype string
+		if err := colRows.Scan(&tname, &cname, &ctype); err != nil {
+			return nil, fmt.Errorf("completions columns scan: %w", err)
+		}
+		items = append(items, adapter.CompletionItem{
+			Label:  cname,
+			Kind:   adapter.CompletionColumn,
+			Detail: fmt.Sprintf("%s.%s (%s)", tname, cname, ctype),
+		})
+	}
+	if err := colRows.Err(); err != nil {
+		return nil, err
 	}
 
 	return items, nil

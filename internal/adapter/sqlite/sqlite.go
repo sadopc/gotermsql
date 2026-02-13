@@ -343,8 +343,13 @@ func (c *sqliteConn) executeQuery(ctx context.Context, query string, start time.
 	for i := range scanDest {
 		scanDest[i] = new(sql.NullString)
 	}
+	truncated := false
 
 	for rows.Next() {
+		if len(resultRows) >= adapter.DefaultMaxRows {
+			truncated = true
+			break
+		}
 		if err := rows.Scan(scanDest...); err != nil {
 			return nil, fmt.Errorf("sqlite scan: %w", err)
 		}
@@ -367,11 +372,12 @@ func (c *sqliteConn) executeQuery(ctx context.Context, query string, start time.
 	}
 
 	return &adapter.QueryResult{
-		Columns:  cols,
-		Rows:     resultRows,
-		RowCount: int64(len(resultRows)),
-		Duration: time.Since(start),
-		IsSelect: true,
+		Columns:   cols,
+		Rows:      resultRows,
+		RowCount:  int64(len(resultRows)),
+		Duration:  time.Since(start),
+		IsSelect:  true,
+		Truncated: truncated,
 	}, nil
 }
 
@@ -456,18 +462,45 @@ func (c *sqliteConn) Completions(ctx context.Context) ([]adapter.CompletionItem,
 			Kind:   adapter.CompletionTable,
 			Detail: "table",
 		})
+	}
 
-		columns, err := c.Columns(ctx, c.dbName, "main", t.Name)
-		if err != nil {
+	// Batch: get all columns for all tables in a single query using
+	// pragma_table_info(). Falls back to per-table queries if unsupported.
+	rows, err := c.db.QueryContext(ctx,
+		`SELECT m.name, p.name, p.type
+		 FROM sqlite_master m
+		 JOIN pragma_table_info(m.name) p
+		 WHERE m.type IN ('table', 'view')
+		 ORDER BY m.name, p.cid`)
+	if err != nil {
+		// Fallback: per-table column queries
+		for _, t := range tables {
+			columns, cErr := c.Columns(ctx, c.dbName, "main", t.Name)
+			if cErr != nil {
+				continue
+			}
+			for _, col := range columns {
+				items = append(items, adapter.CompletionItem{
+					Label:  col.Name,
+					Kind:   adapter.CompletionColumn,
+					Detail: fmt.Sprintf("%s.%s (%s)", t.Name, col.Name, col.Type),
+				})
+			}
+		}
+		return items, nil
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var tname, cname, ctype string
+		if err := rows.Scan(&tname, &cname, &ctype); err != nil {
 			continue
 		}
-		for _, col := range columns {
-			items = append(items, adapter.CompletionItem{
-				Label:  col.Name,
-				Kind:   adapter.CompletionColumn,
-				Detail: fmt.Sprintf("%s.%s (%s)", t.Name, col.Name, col.Type),
-			})
-		}
+		items = append(items, adapter.CompletionItem{
+			Label:  cname,
+			Kind:   adapter.CompletionColumn,
+			Detail: fmt.Sprintf("%s.%s (%s)", tname, cname, ctype),
+		})
 	}
 
 	return items, nil

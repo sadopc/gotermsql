@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"net/url"
 	"os"
@@ -129,7 +128,7 @@ Examples:
 			// Close database connection if open
 			if m, ok := finalModel.(app.Model); ok {
 				if conn := m.Connection(); conn != nil {
-					conn.Close()
+					_ = conn.Close()
 				}
 			}
 
@@ -258,22 +257,4 @@ func availableAdapters() string {
 		names = append(names, name)
 	}
 	return strings.Join(names, ", ")
-}
-
-// connectAndPing validates a connection at startup.
-func connectAndPing(adapterName, dsn string) (adapter.Connection, error) {
-	a, ok := adapter.Registry[adapterName]
-	if !ok {
-		return nil, fmt.Errorf("unknown adapter: %s", adapterName)
-	}
-	ctx := context.Background()
-	conn, err := a.Connect(ctx, dsn)
-	if err != nil {
-		return nil, err
-	}
-	if err := conn.Ping(ctx); err != nil {
-		conn.Close()
-		return nil, err
-	}
-	return conn, nil
 }

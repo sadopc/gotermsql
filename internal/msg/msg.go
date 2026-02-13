@@ -122,19 +122,6 @@ type QueryErrMsg struct {
 	ConnGen uint64
 }
 
-// QueryCancelledMsg is sent when a query is cancelled.
-type QueryCancelledMsg struct {
-	TabID int
-}
-
-// StreamingResultMsg delivers a page of streaming results.
-type StreamingResultMsg struct {
-	Rows    [][]string
-	Columns []adapter.ColumnMeta
-	Total   int64
-	TabID   int
-}
-
 // NewTabMsg requests creating a new query tab.
 type NewTabMsg struct {
 	Query string

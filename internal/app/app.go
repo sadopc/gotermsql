@@ -5,11 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/help"
-	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -54,8 +53,6 @@ type Model struct {
 	statusbar statusbar.Model
 	connMgr   connmgr.Model
 	autocomp  autocomplete.Model
-	help      help.Model
-	spinner   spinner.Model
 
 	// Per-tab state
 	tabStates map[int]*TabState
@@ -103,9 +100,6 @@ func New(cfg *config.Config, hist *history.History) Model {
 		theme.Current = t
 	}
 
-	s := spinner.New()
-	s.Spinner = spinner.Dot
-
 	compEngine := completion.NewEngine("sql")
 
 	m := Model{
@@ -119,8 +113,6 @@ func New(cfg *config.Config, hist *history.History) Model {
 		statusbar: statusbar.New(),
 		connMgr:   connmgr.New(cfg.Connections),
 		autocomp:  autocomplete.New(compEngine),
-		help:      help.New(),
-		spinner:   s,
 
 		tabStates:  make(map[int]*TabState),
 		compEngine: compEngine,
@@ -144,9 +136,7 @@ func New(cfg *config.Config, hist *history.History) Model {
 
 // Init initializes the application.
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(
-		m.spinner.Tick,
-	)
+	return nil
 }
 
 // Update handles all messages.
@@ -207,7 +197,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ConnectMsg:
 		if m.conn != nil {
-			m.conn.Close()
+			_ = m.conn.Close()
 		}
 		if m.schemaCancel != nil {
 			m.schemaCancel()
@@ -224,9 +214,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.loadSchema())
 
 	case ConnectErrMsg:
+		errText := "unknown error"
+		if msg.Err != nil {
+			errText = sanitizeError(msg.Err.Error())
+		}
 		var sbCmd tea.Cmd
 		m.statusbar, sbCmd = m.statusbar.Update(StatusMsg{
-			Text: "Connection failed: " + sanitizeError(msg.Err.Error()), IsError: true,
+			Text: "Connection failed: " + errText, IsError: true,
 		})
 		cmds = append(cmds, sbCmd)
 
@@ -260,13 +254,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break // stale error from previous connection
 		}
 		m.sidebar.SetLoading(false)
+		errText := "unknown error"
+		if msg.Err != nil {
+			errText = msg.Err.Error()
+		}
 		var sbCmd tea.Cmd
 		m.statusbar, sbCmd = m.statusbar.Update(StatusMsg{
-			Text: "Schema load failed: " + msg.Err.Error(), IsError: true,
+			Text: "Schema load failed: " + errText, IsError: true,
 		})
 		cmds = append(cmds, sbCmd)
 
 	case ExecuteQueryMsg:
+		// Cancel any in-flight query before starting a new one
+		if m.executing {
+			if m.cancelFunc != nil {
+				m.cancelFunc()
+			}
+			if m.conn != nil {
+				m.conn.Cancel()
+			}
+			m.executing = false
+		}
 		cmds = append(cmds, m.executeQuery(msg.Query, msg.TabID))
 
 	case QueryStartedMsg:
@@ -308,7 +316,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// Save to history
 			if m.history != nil && m.conn != nil && msg.Result != nil {
-				m.history.Add(history.HistoryEntry{
+				_ = m.history.Add(history.HistoryEntry{
 					Query:        ts.Query,
 					Adapter:      m.conn.AdapterName(),
 					DatabaseName: m.conn.DatabaseName(),
@@ -340,7 +348,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			ts.Results.SetError(msg.Err)
 			// Save error to history
 			if m.history != nil && m.conn != nil {
-				m.history.Add(history.HistoryEntry{
+				_ = m.history.Add(history.HistoryEntry{
 					Query:        ts.Query,
 					Adapter:      m.conn.AdapterName(),
 					DatabaseName: m.conn.DatabaseName(),
@@ -383,6 +391,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.conn.Cancel()
 			}
 			m.executing = false
+		}
+		if ts := m.tabStates[msg.TabID]; ts != nil {
+			ts.Results.CloseIterator()
 		}
 		delete(m.tabStates, msg.TabID)
 		var cmd tea.Cmd
@@ -450,11 +461,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case statusbar.ClearStatusMsg:
 		m.statusbar, _ = m.statusbar.Update(msg)
-
-	case spinner.TickMsg:
-		var cmd tea.Cmd
-		m.spinner, cmd = m.spinner.Update(msg)
-		cmds = append(cmds, cmd)
 	}
 
 	return m, tea.Batch(cmds...)
@@ -815,7 +821,8 @@ func (m *Model) connect(adapterName, dsn string) tea.Cmd {
 		if !ok {
 			return ConnectErrMsg{Err: fmt.Errorf("unknown adapter: %s", adapterName)}
 		}
-		ctx := context.Background()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
 		conn, err := a.Connect(ctx, dsn)
 		if err != nil {
 			return ConnectErrMsg{Err: err}
@@ -1035,16 +1042,7 @@ func (m *Model) executeQuery(query string, tabID int) tea.Cmd {
 				return QueryErrMsg{Err: err, TabID: tabID, RunID: runID, ConnGen: connGen}
 			}
 
-			// Safety cap: truncate large result sets to prevent OOM
-			const maxRows = 10000
-			truncated := false
-			if result.IsSelect && len(result.Rows) > maxRows {
-				result.Rows = result.Rows[:maxRows]
-				result.RowCount = int64(maxRows)
-				truncated = true
-			}
-
-			return QueryResultMsg{Result: result, TabID: tabID, RunID: runID, ConnGen: connGen, Truncated: truncated}
+			return QueryResultMsg{Result: result, TabID: tabID, RunID: runID, ConnGen: connGen, Truncated: result.Truncated}
 		},
 	)
 }
@@ -1114,8 +1112,17 @@ func sanitizeError(msg string) string {
 			msg = msg[:idx+len(prefix)] + "***" + msg[idx+len(prefix)+atIdx:]
 		}
 	}
+	// MySQL driver format: user:pass@tcp(
+	msg = reMySQLCreds.ReplaceAllString(msg, "${1}***@tcp(")
+	// PostgreSQL keyword format: password=xxx
+	msg = rePGPassword.ReplaceAllString(msg, "password=***")
 	return msg
 }
+
+var (
+	reMySQLCreds = regexp.MustCompile(`(\b\w+:)[^@]+@tcp\(`)
+	rePGPassword = regexp.MustCompile(`password=[^\s]+`)
+)
 
 func isTypingKey(msg tea.KeyMsg) bool {
 	s := msg.String()

@@ -380,40 +380,6 @@ func TestQueryStartedMsg(t *testing.T) {
 	}
 }
 
-func TestQueryCancelledMsg(t *testing.T) {
-	m := QueryCancelledMsg{TabID: 6}
-	if m.TabID != 6 {
-		t.Errorf("QueryCancelledMsg.TabID = %d, want 6", m.TabID)
-	}
-}
-
-func TestStreamingResultMsg(t *testing.T) {
-	m := StreamingResultMsg{
-		Rows: [][]string{
-			{"1", "Alice"},
-			{"2", "Bob"},
-		},
-		Columns: []adapter.ColumnMeta{
-			{Name: "id", Type: "int"},
-			{Name: "name", Type: "text"},
-		},
-		Total: 100,
-		TabID: 1,
-	}
-	if len(m.Rows) != 2 {
-		t.Errorf("StreamingResultMsg.Rows length = %d, want 2", len(m.Rows))
-	}
-	if len(m.Columns) != 2 {
-		t.Errorf("StreamingResultMsg.Columns length = %d, want 2", len(m.Columns))
-	}
-	if m.Total != 100 {
-		t.Errorf("StreamingResultMsg.Total = %d, want 100", m.Total)
-	}
-	if m.TabID != 1 {
-		t.Errorf("StreamingResultMsg.TabID = %d, want 1", m.TabID)
-	}
-}
-
 func TestExportCompleteMsg(t *testing.T) {
 	m := ExportCompleteMsg{
 		Path:     "/tmp/data.csv",

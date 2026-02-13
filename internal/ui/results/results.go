@@ -25,6 +25,10 @@ type FetchedPageMsg struct {
 	TabID   int
 }
 
+// maxBufferedRows is the maximum number of rows kept in memory for streamed
+// results. When this limit is exceeded, the oldest rows are trimmed.
+const maxBufferedRows = 5000
+
 // Model is the results table component. It wraps bubbles/table with support
 // for streaming large result sets via adapter.RowIterator.
 type Model struct {
@@ -111,10 +115,6 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.SetResults(msg.Result)
 		return m, nil
 
-	case appmsg.StreamingResultMsg:
-		m.appendStreamingRows(msg.Rows, msg.Columns, msg.Total)
-		return m, nil
-
 	case FetchedPageMsg:
 		if msg.TabID != m.tabID {
 			return m, nil
@@ -128,15 +128,25 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 		if msg.Forward {
 			m.allRows = append(m.allRows, msg.Rows...)
+			// Trim oldest rows if exceeding buffer limit
+			if len(m.allRows) > maxBufferedRows {
+				excess := len(m.allRows) - maxBufferedRows
+				m.allRows = m.allRows[excess:]
+				m.offset += excess
+			}
 			m.rows = m.allRows
 			m.rebuildTableRows()
 		} else {
 			m.allRows = append(msg.Rows, m.allRows...)
-			m.rows = m.allRows
 			m.offset -= len(msg.Rows)
 			if m.offset < 0 {
 				m.offset = 0
 			}
+			// Trim newest rows if exceeding buffer limit
+			if len(m.allRows) > maxBufferedRows {
+				m.allRows = m.allRows[:maxBufferedRows]
+			}
+			m.rows = m.allRows
 			m.rebuildTableRows()
 		}
 		return m, nil
@@ -355,6 +365,14 @@ func (m Model) Rows() [][]string {
 	return m.allRows
 }
 
+// CloseIterator closes the current iterator if any, releasing resources.
+func (m *Model) CloseIterator() {
+	if m.iterator != nil {
+		m.iterator.Close()
+		m.iterator = nil
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
@@ -373,17 +391,6 @@ func (m *Model) rebuildTableRows() {
 		tableRows[i] = table.Row(row)
 	}
 	m.table.SetRows(tableRows)
-}
-
-// appendStreamingRows adds rows received from a streaming result message.
-func (m *Model) appendStreamingRows(rows [][]string, cols []adapter.ColumnMeta, total int64) {
-	if len(cols) > 0 && len(m.columns) == 0 {
-		m.columns = cols
-	}
-	m.totalRows = total
-	m.allRows = append(m.allRows, rows...)
-	m.rows = m.allRows
-	m.rebuildTable()
 }
 
 // contentWidth returns the usable width inside the border.
@@ -488,7 +495,9 @@ func formatDuration(d time.Duration) string {
 // fetchNextPage returns a tea.Cmd that fetches the next page from an iterator.
 func fetchNextPage(iter adapter.RowIterator, tabID int) tea.Cmd {
 	return func() tea.Msg {
-		rows, err := iter.FetchNext(context.Background())
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		rows, err := iter.FetchNext(ctx)
 		return FetchedPageMsg{Rows: rows, Forward: true, Err: err, TabID: tabID}
 	}
 }
@@ -496,7 +505,9 @@ func fetchNextPage(iter adapter.RowIterator, tabID int) tea.Cmd {
 // fetchPrevPage returns a tea.Cmd that fetches the previous page from an iterator.
 func fetchPrevPage(iter adapter.RowIterator, tabID int) tea.Cmd {
 	return func() tea.Msg {
-		rows, err := iter.FetchPrev(context.Background())
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		rows, err := iter.FetchPrev(ctx)
 		return FetchedPageMsg{Rows: rows, Forward: false, Err: err, TabID: tabID}
 	}
 }
