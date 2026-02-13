@@ -77,6 +77,13 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 		return m, clearAfter()
 
+	case appmsg.QueryStreamingMsg:
+		m.queryTime = msg.Duration
+		m.rowCount = -1
+		m.message = "streaming"
+		m.isError = false
+		return m, clearAfter()
+
 	case appmsg.QueryErrMsg:
 		if msg.Err != nil {
 			m.message = msg.Err.Error()

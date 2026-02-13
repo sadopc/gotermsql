@@ -488,6 +488,16 @@ func formatDuration(d time.Duration) string {
 	}
 }
 
+// SetQueryDuration sets the query execution time for the footer display.
+func (m *Model) SetQueryDuration(d time.Duration) {
+	m.queryTime = d
+}
+
+// FetchFirstPage returns a tea.Cmd that fetches the first page from an iterator.
+func FetchFirstPage(iter adapter.RowIterator, tabID int) tea.Cmd {
+	return fetchNextPage(iter, tabID)
+}
+
 // ---------------------------------------------------------------------------
 // Async fetch commands
 // ---------------------------------------------------------------------------

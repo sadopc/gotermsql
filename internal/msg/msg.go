@@ -121,6 +121,15 @@ type QueryErrMsg struct {
 	ConnGen uint64
 }
 
+// QueryStreamingMsg is sent when a streaming query begins returning results.
+type QueryStreamingMsg struct {
+	Iterator adapter.RowIterator
+	Duration time.Duration
+	TabID    int
+	RunID    uint64
+	ConnGen  uint64
+}
+
 // NewTabMsg requests creating a new query tab.
 type NewTabMsg struct {
 	Query string

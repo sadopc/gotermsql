@@ -322,6 +322,43 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, sbCmd)
 		}
 
+	case QueryStreamingMsg:
+		if msg.ConnGen != m.connGen {
+			msg.Iterator.Close()
+			break
+		}
+		ts := m.tabStates[msg.TabID]
+		if ts == nil {
+			msg.Iterator.Close()
+			if m.executing && msg.TabID == m.executingTabID {
+				m.executing = false
+			}
+			break
+		}
+		if msg.RunID != ts.RunID {
+			msg.Iterator.Close()
+			break
+		}
+		m.executing = false
+		ts.Results.SetLoading(false)
+		ts.Results.SetQueryDuration(msg.Duration)
+		ts.Results.SetIterator(msg.Iterator)
+		cmds = append(cmds, results.FetchFirstPage(msg.Iterator, msg.TabID))
+		// Save to history
+		if m.history != nil && m.conn != nil {
+			_ = m.history.Add(history.HistoryEntry{
+				Query:        ts.Query,
+				Adapter:      m.conn.AdapterName(),
+				DatabaseName: m.conn.DatabaseName(),
+				ExecutedAt:   time.Now(),
+				DurationMS:   msg.Duration.Milliseconds(),
+				RowCount:     -1,
+			})
+		}
+		var sbCmd tea.Cmd
+		m.statusbar, sbCmd = m.statusbar.Update(msg)
+		cmds = append(cmds, sbCmd)
+
 	case QueryErrMsg:
 		if msg.ConnGen != m.connGen {
 			break
@@ -1017,19 +1054,45 @@ func (m *Model) executeQuery(query string, tabID int) tea.Cmd {
 	ts.RunID++
 	runID := ts.RunID
 	connGen := m.connGen
+	isSelect := adapter.IsSelectQuery(query)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	// No timeout on the parent context — streaming iterators may be browsed
+	// for hours. Cancellation is explicit (Ctrl+C, new query, tab close, quit).
+	ctx, cancel := context.WithCancel(context.Background())
 	m.cancelFunc = cancel
 
 	return tea.Batch(
 		func() tea.Msg { return QueryStartedMsg{TabID: tabID, RunID: runID, ConnGen: connGen} },
 		func() tea.Msg {
-			defer cancel()
 			if conn == nil {
+				cancel()
 				return QueryErrMsg{Err: adapter.ErrNotConnected, TabID: tabID, RunID: runID, ConnGen: connGen}
 			}
 
-			result, err := conn.Execute(ctx, query)
+			start := time.Now()
+
+			// Streaming path for SELECT-like queries
+			if isSelect {
+				iter, err := conn.ExecuteStreaming(ctx, query, 1000)
+				if err == nil {
+					// Don't cancel — iterator needs context alive for page fetches
+					return QueryStreamingMsg{
+						Iterator: iter,
+						Duration: time.Since(start),
+						TabID:    tabID,
+						RunID:    runID,
+						ConnGen:  connGen,
+					}
+				}
+				// Streaming failed, fall through to Execute
+			}
+
+			// Non-streaming path (or streaming fallback): add 5-min timeout
+			execCtx, execCancel := context.WithTimeout(ctx, 5*time.Minute)
+			defer execCancel()
+			defer cancel()
+
+			result, err := conn.Execute(execCtx, query)
 			if err != nil {
 				return QueryErrMsg{Err: err, TabID: tabID, RunID: runID, ConnGen: connGen}
 			}

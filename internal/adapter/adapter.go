@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/sadopc/gotermsql/internal/schema"
@@ -108,6 +109,22 @@ const (
 // SentinelEOF returns true if err is io.EOF.
 func SentinelEOF(err error) bool {
 	return errors.Is(err, io.EOF)
+}
+
+// IsSelectQuery returns true if the query is a SELECT-like statement that
+// returns rows (SELECT, WITH, EXPLAIN, SHOW, DESCRIBE, PRAGMA, etc.).
+func IsSelectQuery(query string) bool {
+	trimmed := strings.TrimSpace(strings.ToUpper(query))
+	for _, p := range []string{
+		"SELECT ", "WITH ", "EXPLAIN ", "SHOW ", "DESCRIBE ",
+		"DESC ", "PRAGMA ", "TABLE ", "VALUES ", "FROM ",
+		"SUMMARIZE ", "PIVOT ", "UNPIVOT ",
+	} {
+		if strings.HasPrefix(trimmed, p) {
+			return true
+		}
+	}
+	return false
 }
 
 // Registry holds registered adapters by name.
