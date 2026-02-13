@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -146,7 +147,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
-		m.height = msg.Height
+		m.height = msg.Height + heightOffset()
 		m.updateLayout()
 		return m, nil
 
@@ -759,10 +760,39 @@ func (m Model) View() string {
 		connView := m.connMgr.View()
 		// Center the connection manager
 		centered := lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, connView)
-		return centered
+		return clampViewHeight(centered, m.height)
 	}
 
-	return view
+	return clampViewHeight(view, m.height)
+}
+
+// heightOffset returns the height adjustment from the GOTERMSQL_HEIGHT_OFFSET
+// environment variable. Neovim's libvterm may report a terminal height that is
+// 1 row larger than the actual renderable area, causing the first line to
+// scroll off-screen. The Neovim plugin sets GOTERMSQL_HEIGHT_OFFSET=-1 to
+// compensate.
+func heightOffset() int {
+	s := os.Getenv("GOTERMSQL_HEIGHT_OFFSET")
+	if s == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+// clampViewHeight ensures the view does not exceed the terminal height.
+func clampViewHeight(view string, height int) string {
+	if height <= 0 {
+		return view
+	}
+	lines := strings.Split(view, "\n")
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m *Model) updateLayout() {

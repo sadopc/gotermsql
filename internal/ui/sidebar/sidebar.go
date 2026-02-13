@@ -2,6 +2,7 @@ package sidebar
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -10,6 +11,10 @@ import (
 	"github.com/sadopc/gotermsql/internal/schema"
 	"github.com/sadopc/gotermsql/internal/theme"
 )
+
+// useSimpleIcons returns true when running inside Neovim's terminal emulator,
+// which has emoji width rendering issues in libvterm.
+var useSimpleIcons = os.Getenv("NVIM") != ""
 
 // NodeKind represents the type of tree node.
 type NodeKind int
@@ -172,21 +177,40 @@ func (m Model) renderNode(node *TreeNode, selected bool, th *theme.Theme) string
 	indent := strings.Repeat("  ", node.Depth)
 
 	var icon string
-	switch node.Kind {
-	case NodeDatabase:
-		icon = "🗄 "
-	case NodeSchema:
-		icon = "📁 "
-	case NodeTableGroup:
-		icon = "📋 "
-	case NodeTable:
-		icon = "📊 "
-	case NodeViewGroup:
-		icon = "👁 "
-	case NodeView:
-		icon = "📄 "
-	case NodeColumn:
-		icon = "  "
+	if useSimpleIcons {
+		switch node.Kind {
+		case NodeDatabase:
+			icon = "■ "
+		case NodeSchema:
+			icon = "▪ "
+		case NodeTableGroup:
+			icon = "≡ "
+		case NodeTable:
+			icon = "◆ "
+		case NodeViewGroup:
+			icon = "◎ "
+		case NodeView:
+			icon = "◇ "
+		case NodeColumn:
+			icon = "  "
+		}
+	} else {
+		switch node.Kind {
+		case NodeDatabase:
+			icon = "🗄 "
+		case NodeSchema:
+			icon = "📁 "
+		case NodeTableGroup:
+			icon = "📋 "
+		case NodeTable:
+			icon = "📊 "
+		case NodeViewGroup:
+			icon = "👁 "
+		case NodeView:
+			icon = "📄 "
+		case NodeColumn:
+			icon = "  "
+		}
 	}
 
 	// Expand/collapse indicator for parent nodes
