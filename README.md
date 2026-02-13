@@ -201,6 +201,21 @@ gotermsql/
 
 Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea), [Lip Gloss](https://github.com/charmbracelet/lipgloss), and [Bubbles](https://github.com/charmbracelet/bubbles).
 
+## Neovim Integration
+
+Use [gotermsql.nvim](https://github.com/sadopc/gotermsql.nvim) to launch gotermsql in a floating terminal window inside Neovim:
+
+```lua
+-- lazy.nvim
+{
+  "sadopc/gotermsql.nvim",
+  keys = {
+    { "<leader>db", "<cmd>Gotermsql<cr>", desc = "Toggle gotermsql" },
+  },
+  opts = {},
+}
+```
+
 ## Development
 
 ```bash
