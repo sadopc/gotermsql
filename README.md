@@ -7,7 +7,7 @@
 
 A full-featured terminal SQL IDE written in Go. Single binary, zero config, multi-database.
 
-![demo](demo.gif)
+![demo](https://raw.githubusercontent.com/sadopc/gotermsql/main/demo.gif)
 
 ## Why gotermsql?
 
