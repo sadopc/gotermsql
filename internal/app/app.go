@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/sadopc/gotermsql/internal/adapter"
+	"github.com/sadopc/gotermsql/internal/audit"
 	"github.com/sadopc/gotermsql/internal/completion"
 	"github.com/sadopc/gotermsql/internal/config"
 	"github.com/sadopc/gotermsql/internal/history"
@@ -69,6 +70,8 @@ type Model struct {
 	// Config
 	cfg     *config.Config
 	history *history.History
+	audit   *audit.Logger
+	dsn     string
 
 	// Keybinding
 	keyMap   KeyMap
@@ -87,7 +90,7 @@ type Model struct {
 }
 
 // New creates a new app model.
-func New(cfg *config.Config, hist *history.History) Model {
+func New(cfg *config.Config, hist *history.History, auditLog *audit.Logger) Model {
 	keyMode := ParseKeyMode(cfg.KeyMode)
 	var km KeyMap
 	if keyMode == KeyModeVim {
@@ -119,6 +122,7 @@ func New(cfg *config.Config, hist *history.History) Model {
 		compEngine: compEngine,
 		cfg:        cfg,
 		history:    hist,
+		audit:      auditLog,
 		keyMap:     km,
 		keyMode:    keyMode,
 	}
@@ -205,6 +209,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.conn = msg.Conn
 		m.connGen++
+		m.dsn = audit.SanitizeDSN(msg.DSN)
 		m.showConnMgr = false
 		m.connMgr.Hide()
 		var cmd tea.Cmd
@@ -318,6 +323,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					RowCount:     msg.Result.RowCount,
 				})
 			}
+			m.auditLog(ts.Query, msg.Result.Duration.Milliseconds(), msg.Result.RowCount, false)
 			var sbCmd tea.Cmd
 			m.statusbar, sbCmd = m.statusbar.Update(msg)
 			cmds = append(cmds, sbCmd)
@@ -356,6 +362,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				RowCount:     -1,
 			})
 		}
+		m.auditLog(ts.Query, msg.Duration.Milliseconds(), -1, false)
 		var sbCmd tea.Cmd
 		m.statusbar, sbCmd = m.statusbar.Update(msg)
 		cmds = append(cmds, sbCmd)
@@ -386,6 +393,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					IsError:      true,
 				})
 			}
+			m.auditLog(ts.Query, 0, 0, true)
 			var sbCmd tea.Cmd
 			m.statusbar, sbCmd = m.statusbar.Update(msg)
 			cmds = append(cmds, sbCmd)
@@ -1135,6 +1143,23 @@ func (m *Model) executeQuery(query string, tabID int) tea.Cmd {
 // SetConnection sets the initial database connection.
 func (m *Model) SetConnection(conn adapter.Connection, adapterName, dsn string) {
 	m.conn = conn
+	m.dsn = audit.SanitizeDSN(dsn)
+}
+
+func (m *Model) auditLog(query string, durationMS, rowCount int64, isError bool) {
+	if m.audit == nil || m.conn == nil {
+		return
+	}
+	m.audit.Log(audit.Entry{
+		Timestamp:    time.Now(),
+		Query:        query,
+		Adapter:      m.conn.AdapterName(),
+		DatabaseName: m.conn.DatabaseName(),
+		DurationMS:   durationMS,
+		RowCount:     rowCount,
+		IsError:      isError,
+		DSN:          m.dsn,
+	})
 }
 
 // Connection returns the current database connection, or nil if not connected.

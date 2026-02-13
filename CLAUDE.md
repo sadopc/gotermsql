@@ -131,9 +131,39 @@ Two layers with different word-break rules:
 
 **Config/history permissions:** Directories created with `0o700`, files with `0o600` (config may contain passwords).
 
+## Neovim Integration
+
+Neovim plugin at `sadopc/gotermsql.nvim` launches gotermsql in a floating terminal. Two workarounds handle Neovim's libvterm quirks:
+
+**`GOTERMSQL_HEIGHT_OFFSET` env var** (`internal/app/app.go`): Integer offset applied to reported terminal height. libvterm reports 1 extra row in alt-screen mode, causing the first line to scroll off. The plugin sets `GOTERMSQL_HEIGHT_OFFSET=-1` to compensate. Read once per `WindowSizeMsg` via `heightOffset()`.
+
+**`NVIM` env var detection** (`internal/ui/sidebar/sidebar.go`): When `NVIM` is set (Neovim sets this for child processes), sidebar uses single-width Unicode icons (`■`, `▪`, `≡`, `◆`, `◎`, `◇`) instead of emoji (`🗄`, `📁`, `📋`, `📊`, `👁`, `📄`). libvterm renders emoji at different widths than Go's Unicode width calculation expects, causing cursor mismatch and ghost/duplicate lines.
+
+**`clampViewHeight()`** (`internal/app/app.go`): Safety net applied to all `View()` output — ensures the view never exceeds terminal height.
+
 ## Theme System
 
 Three themes in `internal/theme/theme.go`: `"default"` (dark), `"light"`, `"monokai"`. `theme.Current` is a global pointer used by all components. When adding styles to themes, add to all three variants.
+
+## Audit Log
+
+Opt-in JSON Lines audit log for compliance. Controlled by `Config.Audit` (`internal/config/config.go`). When enabled, every query execution (success, streaming, error) writes an `audit.Entry` to the log file.
+
+**Package:** `internal/audit/audit.go` — `Logger` struct with `New(path, maxSizeMB)`, `Log(Entry)`, `Close()`, `SanitizeDSN(dsn)`. All methods are nil-receiver safe (calling on `nil *Logger` is a no-op). Mutex-protected for concurrent use.
+
+**Wiring:** `audit.Logger` is created in `main.go` (non-fatal on error), passed to `app.New()`, stored as `m.audit`. The private `auditLog()` helper is called at the same 3 sites as history logging (`QueryResultMsg`, `QueryStreamingMsg`, `QueryErrMsg` handlers in `app.go`).
+
+**DSN sanitization:** `audit.SanitizeDSN()` strips credentials from URL-style DSNs (`postgres://`, `mysql://`) and keyword-style (`password=xxx`). The sanitized DSN is stored in `m.dsn` on connect.
+
+**Rotation:** Single backup (`.1` suffix) when file exceeds `MaxSizeMB`. Set `max_size_mb: 0` to disable rotation.
+
+**Config example:**
+```yaml
+audit:
+  enabled: true
+  path: ""           # defaults to ConfigDir()/audit.jsonl
+  max_size_mb: 50
+```
 
 ## Key Patterns & Gotchas
 

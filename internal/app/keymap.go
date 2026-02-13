@@ -27,8 +27,8 @@ type KeyMap struct {
 	ToggleKeyMode key.Binding
 	ToggleSidebar key.Binding
 	RefreshSchema key.Binding
-	OpenConnMgr key.Binding
-	Export      key.Binding
+	OpenConnMgr   key.Binding
+	Export        key.Binding
 
 	// Pane resizing
 	ResizeLeft  key.Binding

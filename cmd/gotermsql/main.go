@@ -11,6 +11,7 @@ import (
 
 	"github.com/sadopc/gotermsql/internal/adapter"
 	"github.com/sadopc/gotermsql/internal/app"
+	"github.com/sadopc/gotermsql/internal/audit"
 	"github.com/sadopc/gotermsql/internal/config"
 	"github.com/sadopc/gotermsql/internal/history"
 
@@ -74,8 +75,28 @@ Examples:
 				defer hist.Close()
 			}
 
+			// Open audit log
+			var auditLog *audit.Logger
+			if cfg.Audit.Enabled {
+				auditPath := cfg.Audit.Path
+				if auditPath == "" {
+					if dir, err := config.ConfigDir(); err == nil {
+						auditPath = dir + "/audit.jsonl"
+					}
+				}
+				if auditPath != "" {
+					auditLog, err = audit.New(auditPath, cfg.Audit.MaxSizeMB)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "Warning: could not open audit log: %v\n", err)
+					}
+				}
+			}
+			if auditLog != nil {
+				defer auditLog.Close()
+			}
+
 			// Create app model
-			model := app.New(cfg, hist)
+			model := app.New(cfg, hist, auditLog)
 
 			// Determine connection method
 			var dsn string

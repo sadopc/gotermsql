@@ -35,14 +35,14 @@ const maxBufferedRows = 5000
 type Model struct {
 	table     table.Model
 	columns   []adapter.ColumnMeta
-	tableCols []table.Column        // computed column definitions for rendering
-	rows      [][]string            // current page of rows in memory
-	allRows   [][]string            // all loaded rows (for non-streaming results)
-	totalRows int64                 // total row count (-1 if unknown)
-	offset    int                   // current scroll offset in the full dataset
-	viewTop   int                   // first visible row index for custom rendering
-	pageSize  int                   // rows per page
-	iterator  adapter.RowIterator   // for streaming results
+	tableCols []table.Column      // computed column definitions for rendering
+	rows      [][]string          // current page of rows in memory
+	allRows   [][]string          // all loaded rows (for non-streaming results)
+	totalRows int64               // total row count (-1 if unknown)
+	offset    int                 // current scroll offset in the full dataset
+	viewTop   int                 // first visible row index for custom rendering
+	pageSize  int                 // rows per page
+	iterator  adapter.RowIterator // for streaming results
 	tabID     int
 	width     int
 	height    int

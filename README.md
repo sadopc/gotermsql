@@ -41,6 +41,7 @@ A full-featured terminal SQL IDE written in Go. Single binary, zero config, mult
 - **Vim keybindings** - Toggleable vim/standard mode (F2)
 - **Connection manager** - Save, edit, and manage database connections
 - **Query history** - SQLite-backed local history with search (Ctrl+H)
+- **Audit log** - Opt-in JSON Lines audit trail for compliance (query, adapter, duration, row count, sanitized DSN)
 - **Export** - CSV and JSON export of query results (Ctrl+E)
 - **Resizable panes** - Adjust sidebar width and editor/results split with Ctrl+Arrow keys
 - **Single binary** - Pure Go, zero CGo by default, cross-platform
@@ -152,11 +153,25 @@ editor:
 results:
   page_size: 1000
   max_column_width: 50
+audit:
+  enabled: false     # set to true to enable audit logging
+  path: ""           # defaults to ~/.config/gotermsql/audit.jsonl
+  max_size_mb: 50    # rotate at 50 MB (0 = no rotation)
 connections:
   - name: local-pg
     adapter: postgres
     dsn: postgres://user:pass@localhost:5432/mydb
 ```
+
+### Audit Log
+
+When enabled, gotermsql writes a JSON Lines audit trail of every query execution. Each line contains the timestamp, full query text, adapter, database name, duration, row count, error status, and sanitized DSN (credentials stripped). This is suitable for shipping to SIEM or log aggregators.
+
+```jsonl
+{"timestamp":"2026-02-13T18:23:24Z","query":"SELECT * FROM users","adapter":"postgres","database_name":"mydb","duration_ms":42,"row_count":5,"is_error":false,"dsn":"postgres://%2A%2A%2A@host:5432/mydb"}
+```
+
+The log file rotates automatically when it exceeds `max_size_mb`, keeping one backup (`.1` suffix).
 
 ## Supported Databases
 
@@ -194,6 +209,7 @@ gotermsql/
 │   ├── schema/             # Unified schema types
 │   ├── config/             # YAML config management
 │   ├── history/            # Query history (SQLite-backed)
+│   ├── audit/              # JSON Lines audit log
 │   └── theme/              # Theme definitions (Lip Gloss)
 ├── Makefile
 └── .goreleaser.yaml

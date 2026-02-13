@@ -16,7 +16,15 @@ type Config struct {
 	KeyMode     string            `yaml:"keymode"` // "vim" or "standard"
 	Editor      EditorConfig      `yaml:"editor"`
 	Results     ResultsConfig     `yaml:"results"`
+	Audit       AuditConfig       `yaml:"audit"`
 	Connections []SavedConnection `yaml:"connections"`
+}
+
+// AuditConfig controls the JSON Lines audit log.
+type AuditConfig struct {
+	Enabled   bool   `yaml:"enabled"`
+	Path      string `yaml:"path"`        // empty = ConfigDir()/audit.jsonl
+	MaxSizeMB int    `yaml:"max_size_mb"` // 0 = no rotation
 }
 
 // EditorConfig holds editor-related settings.

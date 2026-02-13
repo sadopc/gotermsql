@@ -14,7 +14,7 @@ import (
 
 func TestNew(t *testing.T) {
 	cfg := config.DefaultConfig()
-	m := New(cfg, nil)
+	m := New(cfg, nil, nil)
 
 	t.Run("focusedPane is PaneEditor", func(t *testing.T) {
 		if m.focusedPane != PaneEditor {
@@ -116,7 +116,7 @@ func TestNew(t *testing.T) {
 func TestNew_VimMode(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.KeyMode = "vim"
-	m := New(cfg, nil)
+	m := New(cfg, nil, nil)
 
 	t.Run("keyMode is KeyModeVim", func(t *testing.T) {
 		if m.keyMode != KeyModeVim {
@@ -175,7 +175,7 @@ func TestNew_WithConnections(t *testing.T) {
 		{Name: "prod-pg", Adapter: "postgres", Host: "localhost", Port: 5432},
 		{Name: "local-sqlite", Adapter: "sqlite", File: "/tmp/test.db"},
 	}
-	m := New(cfg, nil)
+	m := New(cfg, nil, nil)
 
 	// Should still create normally without crashing
 	if m.cfg != cfg {
@@ -259,7 +259,7 @@ func TestIsTypingKey(t *testing.T) {
 
 func TestInit(t *testing.T) {
 	cfg := config.DefaultConfig()
-	m := New(cfg, nil)
+	m := New(cfg, nil, nil)
 	cmd := m.Init()
 	if cmd != nil {
 		t.Error("Init() should return nil (no background tasks)")
@@ -272,7 +272,7 @@ func TestInit(t *testing.T) {
 
 func TestView_BeforeWindowSize(t *testing.T) {
 	cfg := config.DefaultConfig()
-	m := New(cfg, nil)
+	m := New(cfg, nil, nil)
 	// Before receiving a WindowSizeMsg, width and height are 0
 	view := m.View()
 	if view != "Loading..." {
@@ -286,7 +286,7 @@ func TestView_BeforeWindowSize(t *testing.T) {
 
 func TestView_Quitting(t *testing.T) {
 	cfg := config.DefaultConfig()
-	m := New(cfg, nil)
+	m := New(cfg, nil, nil)
 	m.quitting = true
 	view := m.View()
 	if view != "Goodbye!\n" {
