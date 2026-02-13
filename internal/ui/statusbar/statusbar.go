@@ -10,6 +10,9 @@ import (
 	"github.com/sadopc/gotermsql/internal/theme"
 )
 
+// ClearStatusMsg is sent after a timeout to revert the status bar to key hints.
+type ClearStatusMsg struct{}
+
 // Model is the status bar component.
 type Model struct {
 	width        int
@@ -42,6 +45,12 @@ func (m Model) Init() tea.Cmd {
 
 // Update handles status bar messages.
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
+	clearAfter := func() tea.Cmd {
+		return tea.Tick(5*time.Second, func(time.Time) tea.Msg {
+			return ClearStatusMsg{}
+		})
+	}
+
 	switch msg := msg.(type) {
 	case appmsg.ConnectMsg:
 		m.adapterName = msg.Adapter
@@ -66,10 +75,12 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				m.isError = false
 			}
 		}
+		return m, clearAfter()
 
 	case appmsg.QueryErrMsg:
 		m.message = msg.Err.Error()
 		m.isError = true
+		return m, clearAfter()
 
 	case appmsg.StatusMsg:
 		m.message = msg.Text
@@ -77,6 +88,13 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		if msg.Duration > 0 {
 			m.queryTime = msg.Duration
 		}
+		return m, clearAfter()
+
+	case ClearStatusMsg:
+		m.queryTime = 0
+		m.rowCount = -1
+		m.message = ""
+		m.isError = false
 
 	case appmsg.ToggleKeyModeMsg:
 		if m.keyMode == appmsg.KeyModeStandard {

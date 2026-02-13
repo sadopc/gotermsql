@@ -209,9 +209,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.loadSchema())
 
 	case ConnectErrMsg:
-		m.statusbar, _ = m.statusbar.Update(StatusMsg{
+		var sbCmd tea.Cmd
+		m.statusbar, sbCmd = m.statusbar.Update(StatusMsg{
 			Text: "Connection failed: " + msg.Err.Error(), IsError: true,
 		})
+		cmds = append(cmds, sbCmd)
 
 	case SchemaLoadedMsg:
 		m.sidebar.SetLoading(false)
@@ -228,9 +230,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case SchemaErrMsg:
 		m.sidebar.SetLoading(false)
-		m.statusbar, _ = m.statusbar.Update(StatusMsg{
+		var sbCmd tea.Cmd
+		m.statusbar, sbCmd = m.statusbar.Update(StatusMsg{
 			Text: "Schema load failed: " + msg.Err.Error(), IsError: true,
 		})
+		cmds = append(cmds, sbCmd)
 
 	case ExecuteQueryMsg:
 		cmds = append(cmds, m.executeQuery(msg.Query, msg.TabID))
@@ -251,7 +255,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				ts.Results.SetResults(msg.Result)
 			}
 		}
-		m.statusbar, _ = m.statusbar.Update(msg)
+		var sbCmd tea.Cmd
+		m.statusbar, sbCmd = m.statusbar.Update(msg)
+		cmds = append(cmds, sbCmd)
 		// Save to history
 		if m.history != nil && msg.Result != nil {
 			m.history.Add(history.HistoryEntry{
@@ -270,7 +276,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			ts.Results.SetLoading(false)
 			ts.Results.SetError(msg.Err)
 		}
-		m.statusbar, _ = m.statusbar.Update(msg)
+		var sbCmd tea.Cmd
+		m.statusbar, sbCmd = m.statusbar.Update(msg)
+		cmds = append(cmds, sbCmd)
 		// Save error to history
 		if m.history != nil {
 			m.history.Add(history.HistoryEntry{
@@ -322,7 +330,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.keyMap = StandardKeyMap()
 		}
 		m.statusbar.SetKeyMode(m.keyMode)
-		m.statusbar, _ = m.statusbar.Update(msg)
+		var sbCmd tea.Cmd
+		m.statusbar, sbCmd = m.statusbar.Update(msg)
+		cmds = append(cmds, sbCmd)
 
 	case autocomplete.SelectedMsg:
 		ts := m.activeTabState()
@@ -332,6 +342,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case connmgr.ConnectRequestMsg:
 		cmds = append(cmds, m.connect(msg.AdapterName, msg.DSN))
+
+	case statusbar.ClearStatusMsg:
+		m.statusbar, _ = m.statusbar.Update(msg)
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
