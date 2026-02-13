@@ -157,7 +157,7 @@ func (m Model) View() string {
 			hintSep.Render(" Run ") +
 			hintKey.Render("Ctrl+Q") +
 			hintSep.Render(" Quit ") +
-			hintKey.Render("Tab") +
+			hintKey.Render("Shift+Tab") +
 			hintSep.Render(" Switch pane ") +
 			hintKey.Render("F1") +
 			hintSep.Render(" Help ")
