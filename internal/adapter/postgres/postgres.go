@@ -571,12 +571,7 @@ func (c *pgConn) executeSelect(ctx context.Context, query string, start time.Tim
 	cols := fieldDescToMeta(rows.FieldDescriptions())
 
 	var result [][]string
-	truncated := false
 	for rows.Next() {
-		if len(result) >= adapter.DefaultMaxRows {
-			truncated = true
-			break
-		}
 		vals, err := rows.Values()
 		if err != nil {
 			return nil, fmt.Errorf("execute values: %w", err)
@@ -591,12 +586,11 @@ func (c *pgConn) executeSelect(ctx context.Context, query string, start time.Tim
 	}
 
 	return &adapter.QueryResult{
-		Columns:   cols,
-		Rows:      result,
-		RowCount:  int64(len(result)),
-		Duration:  time.Since(start),
-		IsSelect:  true,
-		Truncated: truncated,
+		Columns:  cols,
+		Rows:     result,
+		RowCount: int64(len(result)),
+		Duration: time.Since(start),
+		IsSelect: true,
 	}, nil
 }
 

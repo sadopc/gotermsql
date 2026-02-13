@@ -343,13 +343,8 @@ func (c *sqliteConn) executeQuery(ctx context.Context, query string, start time.
 	for i := range scanDest {
 		scanDest[i] = new(sql.NullString)
 	}
-	truncated := false
 
 	for rows.Next() {
-		if len(resultRows) >= adapter.DefaultMaxRows {
-			truncated = true
-			break
-		}
 		if err := rows.Scan(scanDest...); err != nil {
 			return nil, fmt.Errorf("sqlite scan: %w", err)
 		}
@@ -372,12 +367,11 @@ func (c *sqliteConn) executeQuery(ctx context.Context, query string, start time.
 	}
 
 	return &adapter.QueryResult{
-		Columns:   cols,
-		Rows:      resultRows,
-		RowCount:  int64(len(resultRows)),
-		Duration:  time.Since(start),
-		IsSelect:  true,
-		Truncated: truncated,
+		Columns:  cols,
+		Rows:     resultRows,
+		RowCount: int64(len(resultRows)),
+		Duration: time.Since(start),
+		IsSelect: true,
 	}, nil
 }
 

@@ -107,11 +107,10 @@ type QueryStartedMsg struct {
 
 // QueryResultMsg is sent when query execution completes.
 type QueryResultMsg struct {
-	Result    *adapter.QueryResult
-	TabID     int
-	RunID     uint64
-	ConnGen   uint64
-	Truncated bool
+	Result  *adapter.QueryResult
+	TabID   int
+	RunID   uint64
+	ConnGen uint64
 }
 
 // QueryErrMsg is sent when query execution fails.

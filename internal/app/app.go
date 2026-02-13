@@ -306,14 +306,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.Result != nil {
 				ts.Results.SetResults(msg.Result)
 			}
-			// Show truncation warning
-			if msg.Truncated {
-				var sbCmd tea.Cmd
-				m.statusbar, sbCmd = m.statusbar.Update(StatusMsg{
-					Text: fmt.Sprintf("Results truncated to %d rows", len(msg.Result.Rows)),
-				})
-				cmds = append(cmds, sbCmd)
-			}
 			// Save to history
 			if m.history != nil && m.conn != nil && msg.Result != nil {
 				_ = m.history.Add(history.HistoryEntry{
@@ -1042,7 +1034,7 @@ func (m *Model) executeQuery(query string, tabID int) tea.Cmd {
 				return QueryErrMsg{Err: err, TabID: tabID, RunID: runID, ConnGen: connGen}
 			}
 
-			return QueryResultMsg{Result: result, TabID: tabID, RunID: runID, ConnGen: connGen, Truncated: result.Truncated}
+			return QueryResultMsg{Result: result, TabID: tabID, RunID: runID, ConnGen: connGen}
 		},
 	)
 }
