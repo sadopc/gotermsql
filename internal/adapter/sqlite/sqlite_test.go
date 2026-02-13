@@ -2,6 +2,8 @@ package sqlite
 
 import (
 	"context"
+	"io"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -614,6 +616,119 @@ func TestExecuteStreaming_InMemory(t *testing.T) {
 	}
 	if len(page2) != 3 {
 		t.Errorf("page 2 has %d rows, want 3", len(page2))
+	}
+}
+
+func TestExecuteStreaming_10MillionRows(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping 10M row test in short mode")
+	}
+
+	conn := openMemory(t)
+	defer conn.Close()
+
+	ctx := context.Background()
+
+	// Create table and bulk-insert 10M rows via recursive CTE.
+	_, err := conn.Execute(ctx, "CREATE TABLE big_test (id INTEGER PRIMARY KEY, val TEXT)")
+	if err != nil {
+		t.Fatalf("CREATE TABLE error: %v", err)
+	}
+
+	const totalRows = 10_000_000
+	t.Logf("inserting %d rows...", totalRows)
+	_, err = conn.Execute(ctx, `
+		WITH RECURSIVE cnt(x) AS (
+			VALUES(1)
+			UNION ALL
+			SELECT x+1 FROM cnt WHERE x < 10000000
+		)
+		INSERT INTO big_test SELECT x, 'row-' || x FROM cnt
+	`)
+	if err != nil {
+		t.Fatalf("bulk INSERT error: %v", err)
+	}
+	t.Log("insert complete, starting streaming test")
+
+	// Force GC and record baseline memory.
+	runtime.GC()
+	var baseline runtime.MemStats
+	runtime.ReadMemStats(&baseline)
+
+	// Stream with page size 1000 (same as production).
+	const pageSize = 1000
+	iter, err := conn.ExecuteStreaming(ctx, "SELECT * FROM big_test ORDER BY id", pageSize)
+	if err != nil {
+		t.Fatalf("ExecuteStreaming error: %v", err)
+	}
+	defer iter.Close()
+
+	if len(iter.Columns()) != 2 {
+		t.Fatalf("Columns() = %d, want 2", len(iter.Columns()))
+	}
+
+	// Drain all pages, keeping only the latest page in scope.
+	var rowCount int64
+	var pageCount int
+	var peakAlloc uint64
+	for {
+		page, err := iter.FetchNext(ctx)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			t.Fatalf("FetchNext error after %d rows: %v", rowCount, err)
+		}
+		if len(page) == 0 {
+			break
+		}
+		rowCount += int64(len(page))
+		pageCount++
+
+		// Sample memory every 1000 pages.
+		if pageCount%1000 == 0 {
+			var mem runtime.MemStats
+			runtime.ReadMemStats(&mem)
+			if mem.Alloc > peakAlloc {
+				peakAlloc = mem.Alloc
+			}
+		}
+	}
+
+	// Final memory snapshot.
+	runtime.GC()
+	var final runtime.MemStats
+	runtime.ReadMemStats(&final)
+	if final.Alloc > peakAlloc {
+		peakAlloc = final.Alloc
+	}
+
+	t.Logf("streamed %d rows in %d pages", rowCount, pageCount)
+	t.Logf("baseline alloc: %d MB, peak alloc: %d MB",
+		baseline.Alloc/1024/1024, peakAlloc/1024/1024)
+
+	// Verify all rows were fetched.
+	if rowCount != totalRows {
+		t.Errorf("fetched %d rows, want %d", rowCount, totalRows)
+	}
+
+	// Each page should have been exactly pageSize (except possibly the last).
+	expectedPages := totalRows / pageSize
+	if totalRows%pageSize != 0 {
+		expectedPages++
+	}
+	if pageCount != expectedPages {
+		t.Errorf("got %d pages, want %d", pageCount, expectedPages)
+	}
+
+	// Memory guard: streaming should not hold all 10M rows in memory.
+	// 10M rows × ~20 bytes each ≈ 200 MB if all held at once.
+	// With streaming, peak overhead above baseline should stay well under 100 MB.
+	overhead := peakAlloc - baseline.Alloc
+	const maxOverhead = 100 * 1024 * 1024 // 100 MB
+	if overhead > maxOverhead {
+		t.Errorf("memory overhead = %d MB, want < 100 MB (streaming should not buffer all rows)",
+			overhead/1024/1024)
 	}
 }
 

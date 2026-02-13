@@ -11,6 +11,7 @@ A full-featured terminal SQL IDE written in Go. Single binary, zero config, mult
 - **SQL editor** - Syntax highlighting, line numbers, multi-tab editing
 - **Autocomplete** - Context-aware completions for tables, columns, keywords, functions
 - **Results viewer** - Tabular display with row count, query timing, and export support
+- **Streaming results** - SELECT queries stream via paginated iterator, keeping memory constant even for millions of rows
 - **Vim keybindings** - Toggleable vim/standard mode (F2)
 - **Connection manager** - Save, edit, and manage database connections
 - **Query history** - SQLite-backed local history with search (Ctrl+H)
