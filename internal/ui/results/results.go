@@ -17,11 +17,12 @@ import (
 	"github.com/sadopc/gotermsql/internal/theme"
 )
 
-// fetchedPageMsg carries rows fetched asynchronously from an iterator.
-type fetchedPageMsg struct {
-	rows    [][]string
-	forward bool // true = FetchNext, false = FetchPrev
-	err     error
+// FetchedPageMsg carries rows fetched asynchronously from an iterator.
+type FetchedPageMsg struct {
+	Rows    [][]string
+	Forward bool // true = FetchNext, false = FetchPrev
+	Err     error
+	TabID   int
 }
 
 // Model is the results table component. It wraps bubbles/table with support
@@ -35,6 +36,7 @@ type Model struct {
 	offset    int                 // current scroll offset in the full dataset
 	pageSize  int                 // rows per page
 	iterator  adapter.RowIterator // for streaming results
+	tabID     int
 	width     int
 	height    int
 	focused   bool
@@ -45,7 +47,7 @@ type Model struct {
 }
 
 // New creates a new results model with sensible defaults.
-func New() Model {
+func New(tabID int) Model {
 	t := table.New(
 		table.WithFocused(false),
 		table.WithHeight(10),
@@ -63,6 +65,7 @@ func New() Model {
 
 	return Model{
 		table:     t,
+		tabID:     tabID,
 		pageSize:  1000,
 		totalRows: -1,
 	}
@@ -88,14 +91,14 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			if m.iterator != nil && m.table.Cursor() >= len(m.rows)-1 {
 				m.loading = true
 				iter := m.iterator
-				return m, fetchNextPage(iter)
+				return m, fetchNextPage(iter, m.tabID)
 			}
 		case "pgup":
 			// If we have an iterator and are at the top, fetch previous page.
 			if m.iterator != nil && m.offset > 0 && m.table.Cursor() == 0 {
 				m.loading = true
 				iter := m.iterator
-				return m, fetchPrevPage(iter)
+				return m, fetchPrevPage(iter, m.tabID)
 			}
 		}
 
@@ -112,22 +115,25 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.appendStreamingRows(msg.Rows, msg.Columns, msg.Total)
 		return m, nil
 
-	case fetchedPageMsg:
+	case FetchedPageMsg:
+		if msg.TabID != m.tabID {
+			return m, nil
+		}
 		m.loading = false
-		if msg.err != nil {
-			if !adapter.SentinelEOF(msg.err) {
-				m.err = msg.err
+		if msg.Err != nil {
+			if !adapter.SentinelEOF(msg.Err) {
+				m.err = msg.Err
 			}
 			return m, nil
 		}
-		if msg.forward {
-			m.allRows = append(m.allRows, msg.rows...)
+		if msg.Forward {
+			m.allRows = append(m.allRows, msg.Rows...)
 			m.rows = m.allRows
 			m.rebuildTableRows()
 		} else {
-			m.allRows = append(msg.rows, m.allRows...)
+			m.allRows = append(msg.Rows, m.allRows...)
 			m.rows = m.allRows
-			m.offset -= len(msg.rows)
+			m.offset -= len(msg.Rows)
 			if m.offset < 0 {
 				m.offset = 0
 			}
@@ -251,6 +257,9 @@ func (m *Model) SetIterator(iter adapter.RowIterator) {
 
 // SetSize updates the component dimensions and recalculates table layout.
 func (m *Model) SetSize(w, h int) {
+	if m.width == w && m.height == h {
+		return
+	}
 	m.width = w
 	m.height = h
 
@@ -477,18 +486,18 @@ func formatDuration(d time.Duration) string {
 // ---------------------------------------------------------------------------
 
 // fetchNextPage returns a tea.Cmd that fetches the next page from an iterator.
-func fetchNextPage(iter adapter.RowIterator) tea.Cmd {
+func fetchNextPage(iter adapter.RowIterator, tabID int) tea.Cmd {
 	return func() tea.Msg {
 		rows, err := iter.FetchNext(context.Background())
-		return fetchedPageMsg{rows: rows, forward: true, err: err}
+		return FetchedPageMsg{Rows: rows, Forward: true, Err: err, TabID: tabID}
 	}
 }
 
 // fetchPrevPage returns a tea.Cmd that fetches the previous page from an iterator.
-func fetchPrevPage(iter adapter.RowIterator) tea.Cmd {
+func fetchPrevPage(iter adapter.RowIterator, tabID int) tea.Cmd {
 	return func() tea.Msg {
 		rows, err := iter.FetchPrev(context.Background())
-		return fetchedPageMsg{rows: rows, forward: false, err: err}
+		return FetchedPageMsg{Rows: rows, Forward: false, Err: err, TabID: tabID}
 	}
 }
 

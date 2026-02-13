@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -98,8 +99,9 @@ func LoadDefault() (*Config, error) {
 	return Load(filepath.Join(dir, "config.yaml"))
 }
 
-// Save writes the Config to the YAML file at path, creating any necessary
-// parent directories.
+// Save writes the Config to the YAML file at path atomically, creating any
+// necessary parent directories. It writes to a temp file first and renames
+// to avoid corruption on crash.
 func (c *Config) Save(path string) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -111,8 +113,30 @@ func (c *Config) Save(path string) error {
 		return fmt.Errorf("marshal config: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		return fmt.Errorf("write config: %w", err)
+	// Write to a temp file in the same directory, then rename for atomicity.
+	tmp, err := os.CreateTemp(dir, ".config-*.yaml.tmp")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	tmpPath := tmp.Name()
+
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("write temp file: %w", err)
+	}
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("chmod temp file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("close temp file: %w", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("rename config: %w", err)
 	}
 	return nil
 }
@@ -130,44 +154,83 @@ func (c *Config) SaveDefault() error {
 // BuildDSN constructs a connection string from the individual fields of a
 // SavedConnection. If DSN is already set, it is returned as-is. For
 // file-based adapters (sqlite, duckdb) it returns the File field. For
-// network adapters it builds "user:password@host:port/database".
+// postgres it builds a proper postgres:// URL with escaped credentials. For
+// mysql it builds the go-sql-driver format with escaped password.
 func (sc *SavedConnection) BuildDSN() string {
 	if sc.DSN != "" {
 		return sc.DSN
 	}
 
-	adapter := strings.ToLower(sc.Adapter)
-	if adapter == "sqlite" || adapter == "duckdb" {
+	adapterName := strings.ToLower(sc.Adapter)
+	if adapterName == "sqlite" || adapterName == "duckdb" {
 		return sc.File
-	}
-
-	var b strings.Builder
-
-	if sc.User != "" {
-		b.WriteString(sc.User)
-		if sc.Password != "" {
-			b.WriteByte(':')
-			b.WriteString(sc.Password)
-		}
-		b.WriteByte('@')
 	}
 
 	host := sc.Host
 	if host == "" {
 		host = "localhost"
 	}
-	b.WriteString(host)
 
-	if sc.Port > 0 {
-		fmt.Fprintf(&b, ":%d", sc.Port)
+	switch adapterName {
+	case "postgres":
+		u := &url.URL{Scheme: "postgres", Host: host}
+		if sc.Port > 0 {
+			u.Host = fmt.Sprintf("%s:%d", host, sc.Port)
+		}
+		if sc.User != "" {
+			if sc.Password != "" {
+				u.User = url.UserPassword(sc.User, sc.Password)
+			} else {
+				u.User = url.User(sc.User)
+			}
+		}
+		if sc.Database != "" {
+			u.Path = "/" + sc.Database
+		}
+		return u.String()
+
+	case "mysql":
+		var b strings.Builder
+		if sc.User != "" {
+			b.WriteString(sc.User)
+			if sc.Password != "" {
+				b.WriteByte(':')
+				b.WriteString(url.QueryEscape(sc.Password))
+			}
+			b.WriteByte('@')
+		}
+		port := sc.Port
+		if port == 0 {
+			port = 3306
+		}
+		fmt.Fprintf(&b, "tcp(%s:%d)", host, port)
+		if sc.Database != "" {
+			b.WriteByte('/')
+			b.WriteString(sc.Database)
+		}
+		return b.String()
+
+	default:
+		// Generic fallback
+		var b strings.Builder
+		if sc.User != "" {
+			b.WriteString(sc.User)
+			if sc.Password != "" {
+				b.WriteByte(':')
+				b.WriteString(sc.Password)
+			}
+			b.WriteByte('@')
+		}
+		b.WriteString(host)
+		if sc.Port > 0 {
+			fmt.Fprintf(&b, ":%d", sc.Port)
+		}
+		if sc.Database != "" {
+			b.WriteByte('/')
+			b.WriteString(sc.Database)
+		}
+		return b.String()
 	}
-
-	if sc.Database != "" {
-		b.WriteByte('/')
-		b.WriteString(sc.Database)
-	}
-
-	return b.String()
 }
 
 // DisplayString returns a human-readable representation of the connection,

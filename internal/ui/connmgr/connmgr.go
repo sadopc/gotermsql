@@ -28,6 +28,11 @@ type ConnectRequestMsg struct {
 	DSN         string
 }
 
+// ConnectionsUpdatedMsg is sent when saved connections are modified.
+type ConnectionsUpdatedMsg struct {
+	Connections []config.SavedConnection
+}
+
 // Model is the connection manager modal.
 type Model struct {
 	state       State
@@ -163,6 +168,9 @@ func (m Model) updateList(msg tea.Msg) (Model, tea.Cmd) {
 				if m.cursor >= len(m.connections) && m.cursor > 0 {
 					m.cursor--
 				}
+				conns := make([]config.SavedConnection, len(m.connections))
+				copy(conns, m.connections)
+				return m, func() tea.Msg { return ConnectionsUpdatedMsg{Connections: conns} }
 			}
 		case "esc", "q":
 			m.visible = false
@@ -199,7 +207,9 @@ func (m Model) updateForm(msg tea.Msg) (Model, tea.Cmd) {
 				m.connections = append(m.connections, conn)
 			}
 			m.state = StateList
-			return m, nil
+			conns := make([]config.SavedConnection, len(m.connections))
+			copy(conns, m.connections)
+			return m, func() tea.Msg { return ConnectionsUpdatedMsg{Connections: conns} }
 		case "ctrl+t":
 			m.state = StateTesting
 			conn := m.formToConnection()
@@ -217,7 +227,7 @@ func (m Model) updateTesting(msg tea.Msg) (Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case testResultMsg:
 		if msg.err != nil {
-			m.message = "Connection failed: " + msg.err.Error()
+			m.message = "Connection failed: " + sanitizeError(msg.err.Error())
 			m.isError = true
 		} else {
 			m.message = "Connection successful!"
@@ -412,4 +422,23 @@ func (m Model) Connections() []config.SavedConnection {
 // SetConnections updates the saved connections list.
 func (m *Model) SetConnections(conns []config.SavedConnection) {
 	m.connections = conns
+}
+
+// sanitizeError strips credentials from error messages that may contain DSN URLs.
+func sanitizeError(msg string) string {
+	for _, prefix := range []string{"postgres://", "postgresql://", "mysql://", "duckdb://"} {
+		for {
+			idx := strings.Index(msg, prefix)
+			if idx < 0 {
+				break
+			}
+			rest := msg[idx+len(prefix):]
+			atIdx := strings.Index(rest, "@")
+			if atIdx < 0 {
+				break
+			}
+			msg = msg[:idx+len(prefix)] + "***" + msg[idx+len(prefix)+atIdx:]
+		}
+	}
+	return msg
 }

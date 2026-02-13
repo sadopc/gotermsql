@@ -83,6 +83,7 @@ type DisconnectMsg struct{}
 type SchemaLoadedMsg struct {
 	Databases []schema.Database
 	ConnGen   uint64
+	Warnings  []string
 }
 
 // SchemaErrMsg is sent when schema loading fails.
@@ -99,22 +100,26 @@ type ExecuteQueryMsg struct {
 
 // QueryStartedMsg is sent when a query begins executing.
 type QueryStartedMsg struct {
-	TabID int
-	RunID uint64
+	TabID   int
+	RunID   uint64
+	ConnGen uint64
 }
 
 // QueryResultMsg is sent when query execution completes.
 type QueryResultMsg struct {
-	Result *adapter.QueryResult
-	TabID  int
-	RunID  uint64
+	Result    *adapter.QueryResult
+	TabID     int
+	RunID     uint64
+	ConnGen   uint64
+	Truncated bool
 }
 
 // QueryErrMsg is sent when query execution fails.
 type QueryErrMsg struct {
-	Err   error
-	TabID int
-	RunID uint64
+	Err     error
+	TabID   int
+	RunID   uint64
+	ConnGen uint64
 }
 
 // QueryCancelledMsg is sent when a query is cancelled.

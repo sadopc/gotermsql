@@ -50,6 +50,15 @@ type Connection interface {
 	AdapterName() string
 }
 
+// BatchIntrospector is an optional interface that connections can implement to
+// load all columns, indexes, and foreign keys for a schema in a single query
+// each, avoiding the N+1 per-table pattern.
+type BatchIntrospector interface {
+	AllColumns(ctx context.Context, db, schemaName string) (map[string][]schema.Column, error)
+	AllIndexes(ctx context.Context, db, schemaName string) (map[string][]schema.Index, error)
+	AllForeignKeys(ctx context.Context, db, schemaName string) (map[string][]schema.ForeignKey, error)
+}
+
 // RowIterator provides paginated access to query results.
 type RowIterator interface {
 	FetchNext(ctx context.Context) ([][]string, error)

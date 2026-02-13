@@ -77,11 +77,15 @@ type Model struct {
 	keyMode  KeyMode
 	vimState VimState
 
+	// Schema loading
+	schemaCancel context.CancelFunc
+
 	// State
-	showHelp    bool
-	showConnMgr bool
-	executing   bool
-	quitting    bool
+	showHelp       bool
+	showConnMgr    bool
+	executing      bool
+	executingTabID int
+	quitting       bool
 }
 
 // New creates a new app model.
@@ -131,7 +135,7 @@ func New(cfg *config.Config, hist *history.History) Model {
 	ed.Focus()
 	m.tabStates[0] = &TabState{
 		Editor:  ed,
-		Results: results.New(),
+		Results: results.New(0),
 	}
 
 	m.statusbar.SetKeyMode(keyMode)
@@ -205,6 +209,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.conn != nil {
 			m.conn.Close()
 		}
+		if m.schemaCancel != nil {
+			m.schemaCancel()
+		}
 		m.conn = msg.Conn
 		m.connGen++
 		m.showConnMgr = false
@@ -219,7 +226,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ConnectErrMsg:
 		var sbCmd tea.Cmd
 		m.statusbar, sbCmd = m.statusbar.Update(StatusMsg{
-			Text: "Connection failed: " + msg.Err.Error(), IsError: true,
+			Text: "Connection failed: " + sanitizeError(msg.Err.Error()), IsError: true,
 		})
 		cmds = append(cmds, sbCmd)
 
@@ -239,6 +246,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.compEngine.UpdateSchema(msg.Databases)
 		}
+		// Show warnings if any
+		if len(msg.Warnings) > 0 {
+			var sbCmd tea.Cmd
+			m.statusbar, sbCmd = m.statusbar.Update(StatusMsg{
+				Text: fmt.Sprintf("Schema loaded with %d warnings", len(msg.Warnings)),
+			})
+			cmds = append(cmds, sbCmd)
+		}
 
 	case SchemaErrMsg:
 		if msg.ConnGen != m.connGen {
@@ -255,19 +270,41 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.executeQuery(msg.Query, msg.TabID))
 
 	case QueryStartedMsg:
+		if msg.ConnGen != m.connGen {
+			break
+		}
 		ts := m.tabStates[msg.TabID]
 		if ts != nil && msg.RunID == ts.RunID {
 			m.executing = true
+			m.executingTabID = msg.TabID
 			ts.Results.SetLoading(true)
 		}
 
 	case QueryResultMsg:
+		if msg.ConnGen != m.connGen {
+			break
+		}
 		ts := m.tabStates[msg.TabID]
-		if ts != nil && msg.RunID == ts.RunID {
+		if ts == nil {
+			// Tab was closed while query was in flight
+			if m.executing && msg.TabID == m.executingTabID {
+				m.executing = false
+			}
+			break
+		}
+		if msg.RunID == ts.RunID {
 			m.executing = false
 			ts.Results.SetLoading(false)
 			if msg.Result != nil {
 				ts.Results.SetResults(msg.Result)
+			}
+			// Show truncation warning
+			if msg.Truncated {
+				var sbCmd tea.Cmd
+				m.statusbar, sbCmd = m.statusbar.Update(StatusMsg{
+					Text: fmt.Sprintf("Results truncated to %d rows", len(msg.Result.Rows)),
+				})
+				cmds = append(cmds, sbCmd)
 			}
 			// Save to history
 			if m.history != nil && m.conn != nil && msg.Result != nil {
@@ -286,8 +323,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case QueryErrMsg:
+		if msg.ConnGen != m.connGen {
+			break
+		}
 		ts := m.tabStates[msg.TabID]
-		if ts != nil && msg.RunID == ts.RunID {
+		if ts == nil {
+			// Tab was closed while query was in flight
+			if m.executing && msg.TabID == m.executingTabID {
+				m.executing = false
+			}
+			break
+		}
+		if msg.RunID == ts.RunID {
 			m.executing = false
 			ts.Results.SetLoading(false)
 			ts.Results.SetError(msg.Err)
@@ -322,12 +369,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.tabStates[tabID] = &TabState{
 			Editor:  ed,
-			Results: results.New(),
+			Results: results.New(tabID),
 		}
 		m.updateLayout()
 		m.focusedPane = PaneEditor
 
 	case CloseTabMsg:
+		if m.executing && msg.TabID == m.executingTabID {
+			if m.cancelFunc != nil {
+				m.cancelFunc()
+			}
+			if m.conn != nil {
+				m.conn.Cancel()
+			}
+			m.executing = false
+		}
 		delete(m.tabStates, msg.TabID)
 		var cmd tea.Cmd
 		m.tabs, cmd = m.tabs.Update(msg)
@@ -360,6 +416,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case connmgr.ConnectRequestMsg:
 		cmds = append(cmds, m.connect(msg.AdapterName, msg.DSN))
 
+	case connmgr.ConnectionsUpdatedMsg:
+		m.cfg.Connections = msg.Connections
+		if err := m.cfg.SaveDefault(); err != nil {
+			var sbCmd tea.Cmd
+			m.statusbar, sbCmd = m.statusbar.Update(StatusMsg{
+				Text: "Failed to save connections: " + err.Error(), IsError: true,
+			})
+			cmds = append(cmds, sbCmd)
+		}
+
 	case ExportCompleteMsg:
 		var sbCmd tea.Cmd
 		m.statusbar, sbCmd = m.statusbar.Update(StatusMsg{
@@ -373,6 +439,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Text: "Export failed: " + msg.Err.Error(), IsError: true,
 		})
 		cmds = append(cmds, sbCmd)
+
+	case results.FetchedPageMsg:
+		ts := m.tabStates[msg.TabID]
+		if ts != nil {
+			var cmd tea.Cmd
+			ts.Results, cmd = ts.Results.Update(msg)
+			cmds = append(cmds, cmd)
+		}
 
 	case statusbar.ClearStatusMsg:
 		m.statusbar, _ = m.statusbar.Update(msg)
@@ -390,6 +464,9 @@ func (m *Model) handleGlobalKeys(msg tea.KeyMsg) tea.Cmd {
 	switch {
 	case msg.String() == "ctrl+q":
 		m.quitting = true
+		if m.schemaCancel != nil {
+			m.schemaCancel()
+		}
 		return tea.Quit
 
 	case msg.String() == "ctrl+c":
@@ -847,11 +924,19 @@ func (m *Model) renderHelpScreen(th *theme.Theme) string {
 func (m *Model) loadSchema() tea.Cmd {
 	conn := m.conn
 	gen := m.connGen
+
+	// Cancel any in-flight schema load
+	if m.schemaCancel != nil {
+		m.schemaCancel()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	m.schemaCancel = cancel
+
 	return func() tea.Msg {
+		defer cancel()
 		if conn == nil {
 			return SchemaErrMsg{Err: adapter.ErrNotConnected, ConnGen: gen}
 		}
-		ctx := context.Background()
 		dbs, err := conn.Databases(ctx)
 		if err != nil {
 			return SchemaErrMsg{Err: err, ConnGen: gen}
@@ -859,29 +944,67 @@ func (m *Model) loadSchema() tea.Cmd {
 
 		// Load full schema for each database
 		var databases []schema.Database
+		var warnings []string
+		batchConn, hasBatch := conn.(adapter.BatchIntrospector)
+
 		for _, db := range dbs {
 			for si := range db.Schemas {
 				s := &db.Schemas[si]
-				for ti := range s.Tables {
-					t := &s.Tables[ti]
-					cols, err := conn.Columns(ctx, db.Name, s.Name, t.Name)
-					if err == nil {
-						t.Columns = cols
+				if hasBatch && len(s.Tables) > 0 {
+					// Batch introspection: 3 queries per schema instead of 3*N
+					allCols, err := batchConn.AllColumns(ctx, db.Name, s.Name)
+					if err != nil {
+						warnings = append(warnings, fmt.Sprintf("batch columns(%s): %v", s.Name, err))
 					}
-					idxs, err := conn.Indexes(ctx, db.Name, s.Name, t.Name)
-					if err == nil {
-						t.Indexes = idxs
+					allIdxs, err := batchConn.AllIndexes(ctx, db.Name, s.Name)
+					if err != nil {
+						warnings = append(warnings, fmt.Sprintf("batch indexes(%s): %v", s.Name, err))
 					}
-					fks, err := conn.ForeignKeys(ctx, db.Name, s.Name, t.Name)
-					if err == nil {
-						t.FKs = fks
+					allFKs, err := batchConn.AllForeignKeys(ctx, db.Name, s.Name)
+					if err != nil {
+						warnings = append(warnings, fmt.Sprintf("batch fkeys(%s): %v", s.Name, err))
+					}
+					for ti := range s.Tables {
+						t := &s.Tables[ti]
+						if cols, ok := allCols[t.Name]; ok {
+							t.Columns = cols
+						}
+						if idxs, ok := allIdxs[t.Name]; ok {
+							t.Indexes = idxs
+						}
+						if fks, ok := allFKs[t.Name]; ok {
+							t.FKs = fks
+						}
+					}
+				} else {
+					// Per-table fallback
+					for ti := range s.Tables {
+						t := &s.Tables[ti]
+						cols, err := conn.Columns(ctx, db.Name, s.Name, t.Name)
+						if err == nil {
+							t.Columns = cols
+						} else {
+							warnings = append(warnings, fmt.Sprintf("columns(%s.%s): %v", s.Name, t.Name, err))
+						}
+						idxs, err := conn.Indexes(ctx, db.Name, s.Name, t.Name)
+						if err == nil {
+							t.Indexes = idxs
+						} else {
+							warnings = append(warnings, fmt.Sprintf("indexes(%s.%s): %v", s.Name, t.Name, err))
+						}
+						fks, err := conn.ForeignKeys(ctx, db.Name, s.Name, t.Name)
+						if err == nil {
+							t.FKs = fks
+						} else {
+							warnings = append(warnings, fmt.Sprintf("fkeys(%s.%s): %v", s.Name, t.Name, err))
+						}
 					}
 				}
 			}
 			databases = append(databases, db)
 		}
 
-		return SchemaLoadedMsg{Databases: databases, ConnGen: gen}
+		return SchemaLoadedMsg{Databases: databases, ConnGen: gen, Warnings: warnings}
 	}
 }
 
@@ -894,23 +1017,34 @@ func (m *Model) executeQuery(query string, tabID int) tea.Cmd {
 	ts.Query = query
 	ts.RunID++
 	runID := ts.RunID
+	connGen := m.connGen
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	m.cancelFunc = cancel
 
 	return tea.Batch(
-		func() tea.Msg { return QueryStartedMsg{TabID: tabID, RunID: runID} },
+		func() tea.Msg { return QueryStartedMsg{TabID: tabID, RunID: runID, ConnGen: connGen} },
 		func() tea.Msg {
 			defer cancel()
 			if conn == nil {
-				return QueryErrMsg{Err: adapter.ErrNotConnected, TabID: tabID, RunID: runID}
+				return QueryErrMsg{Err: adapter.ErrNotConnected, TabID: tabID, RunID: runID, ConnGen: connGen}
 			}
 
 			result, err := conn.Execute(ctx, query)
 			if err != nil {
-				return QueryErrMsg{Err: err, TabID: tabID, RunID: runID}
+				return QueryErrMsg{Err: err, TabID: tabID, RunID: runID, ConnGen: connGen}
 			}
-			return QueryResultMsg{Result: result, TabID: tabID, RunID: runID}
+
+			// Safety cap: truncate large result sets to prevent OOM
+			const maxRows = 10000
+			truncated := false
+			if result.IsSelect && len(result.Rows) > maxRows {
+				result.Rows = result.Rows[:maxRows]
+				result.RowCount = int64(maxRows)
+				truncated = true
+			}
+
+			return QueryResultMsg{Result: result, TabID: tabID, RunID: runID, ConnGen: connGen, Truncated: truncated}
 		},
 	)
 }
@@ -959,6 +1093,28 @@ func (m *Model) exportResults() tea.Cmd {
 		}
 		return ExportCompleteMsg{Path: path, RowCount: int64(len(rows))}
 	}
+}
+
+// sanitizeError strips credentials from error messages that may contain DSN URLs.
+func sanitizeError(msg string) string {
+	// Match postgres://user:pass@, mysql://user:pass@, etc.
+	for _, prefix := range []string{"postgres://", "postgresql://", "mysql://", "duckdb://"} {
+		for {
+			idx := strings.Index(msg, prefix)
+			if idx < 0 {
+				break
+			}
+			// Find the @ after the prefix
+			rest := msg[idx+len(prefix):]
+			atIdx := strings.Index(rest, "@")
+			if atIdx < 0 {
+				break
+			}
+			// Replace user:pass portion with ***
+			msg = msg[:idx+len(prefix)] + "***" + msg[idx+len(prefix)+atIdx:]
+		}
+	}
+	return msg
 }
 
 func isTypingKey(msg tea.KeyMsg) bool {

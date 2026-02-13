@@ -379,6 +379,168 @@ func (c *pgConn) ForeignKeys(ctx context.Context, db, schemaName, table string) 
 }
 
 // ---------------------------------------------------------------------------
+// Batch Introspection (implements adapter.BatchIntrospector)
+// ---------------------------------------------------------------------------
+
+func (c *pgConn) AllColumns(ctx context.Context, db, schemaName string) (map[string][]schema.Column, error) {
+	if schemaName == "" {
+		schemaName = "public"
+	}
+
+	// Fetch all primary key columns in the schema at once.
+	pkRows, err := c.pool.Query(ctx,
+		`SELECT t.relname, a.attname
+		 FROM pg_index i
+		 JOIN pg_class t ON t.oid = i.indrelid
+		 JOIN pg_namespace n ON n.oid = t.relnamespace
+		 JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+		 WHERE n.nspname = $1 AND i.indisprimary`, schemaName)
+	if err != nil {
+		return nil, fmt.Errorf("batch pk: %w", err)
+	}
+	defer pkRows.Close()
+
+	// table -> set of PK column names
+	pkMap := make(map[string]map[string]bool)
+	for pkRows.Next() {
+		var table, col string
+		if err := pkRows.Scan(&table, &col); err != nil {
+			return nil, fmt.Errorf("batch pk scan: %w", err)
+		}
+		if pkMap[table] == nil {
+			pkMap[table] = make(map[string]bool)
+		}
+		pkMap[table][col] = true
+	}
+	if err := pkRows.Err(); err != nil {
+		return nil, err
+	}
+
+	rows, err := c.pool.Query(ctx,
+		`SELECT table_name, column_name, data_type, is_nullable, COALESCE(column_default, '')
+		 FROM information_schema.columns
+		 WHERE table_catalog = $1 AND table_schema = $2
+		 ORDER BY table_name, ordinal_position`, db, schemaName)
+	if err != nil {
+		return nil, fmt.Errorf("batch columns: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string][]schema.Column)
+	for rows.Next() {
+		var table, name, dtype, nullable, dflt string
+		if err := rows.Scan(&table, &name, &dtype, &nullable, &dflt); err != nil {
+			return nil, fmt.Errorf("batch columns scan: %w", err)
+		}
+		result[table] = append(result[table], schema.Column{
+			Name:     name,
+			Type:     dtype,
+			Nullable: nullable == "YES",
+			Default:  dflt,
+			IsPK:     pkMap[table][name],
+		})
+	}
+	return result, rows.Err()
+}
+
+func (c *pgConn) AllIndexes(ctx context.Context, db, schemaName string) (map[string][]schema.Index, error) {
+	if schemaName == "" {
+		schemaName = "public"
+	}
+
+	rows, err := c.pool.Query(ctx,
+		`SELECT t.relname                          AS table_name,
+		        i.relname                          AS index_name,
+		        array_agg(a.attname ORDER BY k.n)  AS columns,
+		        ix.indisunique                      AS is_unique
+		 FROM pg_index ix
+		 JOIN pg_class t ON t.oid = ix.indrelid
+		 JOIN pg_class i ON i.oid = ix.indexrelid
+		 JOIN pg_namespace n ON n.oid = t.relnamespace
+		 JOIN LATERAL unnest(ix.indkey) WITH ORDINALITY AS k(attnum, n) ON true
+		 JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum
+		 WHERE n.nspname = $1
+		 GROUP BY t.relname, i.relname, ix.indisunique
+		 ORDER BY t.relname, i.relname`, schemaName)
+	if err != nil {
+		return nil, fmt.Errorf("batch indexes: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string][]schema.Index)
+	for rows.Next() {
+		var table, name string
+		var cols []string
+		var unique bool
+		if err := rows.Scan(&table, &name, &cols, &unique); err != nil {
+			return nil, fmt.Errorf("batch indexes scan: %w", err)
+		}
+		result[table] = append(result[table], schema.Index{
+			Name:    name,
+			Columns: cols,
+			Unique:  unique,
+		})
+	}
+	return result, rows.Err()
+}
+
+func (c *pgConn) AllForeignKeys(ctx context.Context, db, schemaName string) (map[string][]schema.ForeignKey, error) {
+	if schemaName == "" {
+		schemaName = "public"
+	}
+
+	rows, err := c.pool.Query(ctx,
+		`SELECT tc.table_name,
+		        tc.constraint_name,
+		        kcu.column_name,
+		        ccu.table_name  AS ref_table,
+		        ccu.column_name AS ref_column
+		 FROM information_schema.table_constraints tc
+		 JOIN information_schema.key_column_usage kcu
+		      ON kcu.constraint_name = tc.constraint_name
+		     AND kcu.table_schema    = tc.table_schema
+		 JOIN information_schema.constraint_column_usage ccu
+		      ON ccu.constraint_name = tc.constraint_name
+		     AND ccu.table_schema    = tc.table_schema
+		 WHERE tc.constraint_type = 'FOREIGN KEY'
+		   AND tc.table_schema    = $1
+		 ORDER BY tc.table_name, tc.constraint_name, kcu.ordinal_position`, schemaName)
+	if err != nil {
+		return nil, fmt.Errorf("batch fkeys: %w", err)
+	}
+	defer rows.Close()
+
+	// Group by table -> constraint name
+	type fkKey struct{ table, name string }
+	fkMap := make(map[fkKey]*schema.ForeignKey)
+	var fkOrder []fkKey
+	for rows.Next() {
+		var table, cname, col, refTable, refCol string
+		if err := rows.Scan(&table, &cname, &col, &refTable, &refCol); err != nil {
+			return nil, fmt.Errorf("batch fkeys scan: %w", err)
+		}
+		key := fkKey{table, cname}
+		fk, ok := fkMap[key]
+		if !ok {
+			fk = &schema.ForeignKey{Name: cname, RefTable: refTable}
+			fkMap[key] = fk
+			fkOrder = append(fkOrder, key)
+		}
+		fk.Columns = append(fk.Columns, col)
+		fk.RefColumns = append(fk.RefColumns, refCol)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	result := make(map[string][]schema.ForeignKey)
+	for _, key := range fkOrder {
+		result[key.table] = append(result[key.table], *fkMap[key])
+	}
+	return result, nil
+}
+
+// ---------------------------------------------------------------------------
 // Query Execution
 // ---------------------------------------------------------------------------
 

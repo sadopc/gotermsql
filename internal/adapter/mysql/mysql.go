@@ -45,18 +45,10 @@ func (a *mysqlAdapter) Connect(ctx context.Context, dsn string) (adapter.Connect
 		return nil, fmt.Errorf("mysql: ping: %w", err)
 	}
 
-	// Retrieve connection_id for KILL QUERY support.
-	var connID int64
-	if err := db.QueryRowContext(ctx, "SELECT CONNECTION_ID()").Scan(&connID); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("mysql: connection_id: %w", err)
-	}
-
 	return &mysqlConn{
 		db:     db,
 		dsn:    goDriverDSN,
 		dbName: dbName,
-		connID: connID,
 	}, nil
 }
 
@@ -134,10 +126,10 @@ type mysqlConn struct {
 	db     *sql.DB
 	dsn    string
 	dbName string
-	connID int64
 
-	mu     sync.Mutex
-	cancel context.CancelFunc
+	mu           sync.Mutex
+	cancel       context.CancelFunc
+	activeConnID int64
 }
 
 func (c *mysqlConn) AdapterName() string  { return "mysql" }
@@ -365,32 +357,190 @@ func (c *mysqlConn) ForeignKeys(ctx context.Context, db, schemaName, table strin
 }
 
 // ---------------------------------------------------------------------------
+// Batch Introspection (implements adapter.BatchIntrospector)
+// ---------------------------------------------------------------------------
+
+func (c *mysqlConn) AllColumns(ctx context.Context, db, schemaName string) (map[string][]schema.Column, error) {
+	if db == "" {
+		db = c.dbName
+	}
+
+	rows, err := c.db.QueryContext(ctx, `
+		SELECT c.TABLE_NAME, c.COLUMN_NAME, c.COLUMN_TYPE, c.IS_NULLABLE,
+		       COALESCE(c.COLUMN_DEFAULT, ''),
+		       CASE WHEN kcu.COLUMN_NAME IS NOT NULL THEN 1 ELSE 0 END AS is_pk
+		FROM information_schema.columns c
+		LEFT JOIN information_schema.key_column_usage kcu
+			ON  kcu.TABLE_SCHEMA    = c.TABLE_SCHEMA
+			AND kcu.TABLE_NAME      = c.TABLE_NAME
+			AND kcu.COLUMN_NAME     = c.COLUMN_NAME
+			AND kcu.CONSTRAINT_NAME = 'PRIMARY'
+		WHERE c.TABLE_SCHEMA = ?
+		ORDER BY c.TABLE_NAME, c.ORDINAL_POSITION`, db)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string][]schema.Column)
+	for rows.Next() {
+		var (
+			table    string
+			col      schema.Column
+			nullable string
+			isPKInt  int
+		)
+		if err := rows.Scan(&table, &col.Name, &col.Type, &nullable, &col.Default, &isPKInt); err != nil {
+			return nil, err
+		}
+		col.Nullable = nullable == "YES"
+		col.IsPK = isPKInt == 1
+		result[table] = append(result[table], col)
+	}
+	return result, rows.Err()
+}
+
+func (c *mysqlConn) AllIndexes(ctx context.Context, db, schemaName string) (map[string][]schema.Index, error) {
+	if db == "" {
+		db = c.dbName
+	}
+
+	rows, err := c.db.QueryContext(ctx, `
+		SELECT TABLE_NAME, INDEX_NAME, COLUMN_NAME, NON_UNIQUE
+		FROM information_schema.statistics
+		WHERE TABLE_SCHEMA = ?
+		ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX`, db)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	type idxKey struct{ table, name string }
+	indexMap := make(map[idxKey]*schema.Index)
+	var order []idxKey
+
+	for rows.Next() {
+		var table, idxName, colName string
+		var nonUnique int
+		if err := rows.Scan(&table, &idxName, &colName, &nonUnique); err != nil {
+			return nil, err
+		}
+		key := idxKey{table, idxName}
+		idx, ok := indexMap[key]
+		if !ok {
+			idx = &schema.Index{Name: idxName, Unique: nonUnique == 0}
+			indexMap[key] = idx
+			order = append(order, key)
+		}
+		idx.Columns = append(idx.Columns, colName)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	result := make(map[string][]schema.Index)
+	for _, key := range order {
+		result[key.table] = append(result[key.table], *indexMap[key])
+	}
+	return result, nil
+}
+
+func (c *mysqlConn) AllForeignKeys(ctx context.Context, db, schemaName string) (map[string][]schema.ForeignKey, error) {
+	if db == "" {
+		db = c.dbName
+	}
+
+	rows, err := c.db.QueryContext(ctx, `
+		SELECT kcu.TABLE_NAME, kcu.CONSTRAINT_NAME, kcu.COLUMN_NAME,
+		       kcu.REFERENCED_TABLE_NAME, kcu.REFERENCED_COLUMN_NAME
+		FROM information_schema.key_column_usage kcu
+		JOIN information_schema.referential_constraints rc
+			ON  rc.CONSTRAINT_SCHEMA = kcu.CONSTRAINT_SCHEMA
+			AND rc.CONSTRAINT_NAME   = kcu.CONSTRAINT_NAME
+		WHERE kcu.TABLE_SCHEMA          = ?
+		  AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+		ORDER BY kcu.TABLE_NAME, kcu.CONSTRAINT_NAME, kcu.ORDINAL_POSITION`, db)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	type fkKey struct{ table, name string }
+	fkMap := make(map[fkKey]*schema.ForeignKey)
+	var fkOrder []fkKey
+
+	for rows.Next() {
+		var table, fkName, colName, refTable, refCol string
+		if err := rows.Scan(&table, &fkName, &colName, &refTable, &refCol); err != nil {
+			return nil, err
+		}
+		key := fkKey{table, fkName}
+		fk, ok := fkMap[key]
+		if !ok {
+			fk = &schema.ForeignKey{Name: fkName, RefTable: refTable}
+			fkMap[key] = fk
+			fkOrder = append(fkOrder, key)
+		}
+		fk.Columns = append(fk.Columns, colName)
+		fk.RefColumns = append(fk.RefColumns, refCol)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	result := make(map[string][]schema.ForeignKey)
+	for _, key := range fkOrder {
+		result[key.table] = append(result[key.table], *fkMap[key])
+	}
+	return result, nil
+}
+
+// ---------------------------------------------------------------------------
 // Execute
 // ---------------------------------------------------------------------------
 
 func (c *mysqlConn) Execute(ctx context.Context, query string) (*adapter.QueryResult, error) {
 	ctx, cancel := context.WithCancel(ctx)
+
+	// Pin to a dedicated connection from the pool so that CONNECTION_ID()
+	// accurately identifies the session running our query.
+	sqlConn, err := c.db.Conn(ctx)
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("mysql: acquire conn: %w", err)
+	}
+
+	var connID int64
+	if err := sqlConn.QueryRowContext(ctx, "SELECT CONNECTION_ID()").Scan(&connID); err != nil {
+		sqlConn.Close()
+		cancel()
+		return nil, fmt.Errorf("mysql: connection_id: %w", err)
+	}
+
 	c.mu.Lock()
 	c.cancel = cancel
+	c.activeConnID = connID
 	c.mu.Unlock()
 
 	defer func() {
 		c.mu.Lock()
 		c.cancel = nil
+		c.activeConnID = 0
 		c.mu.Unlock()
+		sqlConn.Close()
 		cancel()
 	}()
 
 	start := time.Now()
 
 	if isSelectQuery(query) {
-		return c.executeSelect(ctx, query, start)
+		return c.executeSelectOnConn(ctx, sqlConn, query, start)
 	}
-	return c.executeExec(ctx, query, start)
+	return c.executeExecOnConn(ctx, sqlConn, query, start)
 }
 
-func (c *mysqlConn) executeSelect(ctx context.Context, query string, start time.Time) (*adapter.QueryResult, error) {
-	rows, err := c.db.QueryContext(ctx, query)
+func (c *mysqlConn) executeSelectOnConn(ctx context.Context, conn *sql.Conn, query string, start time.Time) (*adapter.QueryResult, error) {
+	rows, err := conn.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -445,8 +595,8 @@ func (c *mysqlConn) executeSelect(ctx context.Context, query string, start time.
 	}, nil
 }
 
-func (c *mysqlConn) executeExec(ctx context.Context, query string, start time.Time) (*adapter.QueryResult, error) {
-	result, err := c.db.ExecContext(ctx, query)
+func (c *mysqlConn) executeExecOnConn(ctx context.Context, conn *sql.Conn, query string, start time.Time) (*adapter.QueryResult, error) {
+	result, err := conn.ExecContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -466,11 +616,15 @@ func (c *mysqlConn) executeExec(ctx context.Context, query string, start time.Ti
 func (c *mysqlConn) Cancel() error {
 	c.mu.Lock()
 	cancel := c.cancel
-	connID := c.connID
+	connID := c.activeConnID
 	c.mu.Unlock()
 
 	if cancel != nil {
 		cancel()
+	}
+
+	if connID == 0 {
+		return nil // no active query
 	}
 
 	// Open a short-lived connection to issue KILL QUERY.

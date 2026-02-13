@@ -71,6 +71,9 @@ Examples:
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: could not open history: %v\n", err)
 			}
+			if hist != nil {
+				defer hist.Close()
+			}
 
 			// Create app model
 			model := app.New(cfg, hist)
@@ -128,9 +131,6 @@ Examples:
 				if conn := m.Connection(); conn != nil {
 					conn.Close()
 				}
-			}
-			if hist != nil {
-				hist.Close()
 			}
 
 			return nil

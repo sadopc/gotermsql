@@ -278,7 +278,7 @@ func TestBuildDSN(t *testing.T) {
 				Port:     5432,
 				Database: "mydb",
 			},
-			want: "admin:secret@db.example.com:5432/mydb",
+			want: "postgres://admin:secret@db.example.com:5432/mydb",
 		},
 		{
 			name: "postgres host and database only",
@@ -287,7 +287,7 @@ func TestBuildDSN(t *testing.T) {
 				Host:     "db.example.com",
 				Database: "mydb",
 			},
-			want: "db.example.com/mydb",
+			want: "postgres://db.example.com/mydb",
 		},
 		{
 			name: "postgres user without password",
@@ -298,7 +298,7 @@ func TestBuildDSN(t *testing.T) {
 				Port:     5432,
 				Database: "mydb",
 			},
-			want: "readonly@db.example.com:5432/mydb",
+			want: "postgres://readonly@db.example.com:5432/mydb",
 		},
 		{
 			name: "postgres with DSN field set",
@@ -319,7 +319,19 @@ func TestBuildDSN(t *testing.T) {
 				Port:     5432,
 				Database: "devdb",
 			},
-			want: "dev:dev@localhost:5432/devdb",
+			want: "postgres://dev:dev@localhost:5432/devdb",
+		},
+		{
+			name: "postgres special chars in password",
+			conn: SavedConnection{
+				Adapter:  "postgres",
+				User:     "admin",
+				Password: "p@ss:w0rd/foo",
+				Host:     "db.example.com",
+				Port:     5432,
+				Database: "mydb",
+			},
+			want: "postgres://admin:p%40ss%3Aw0rd%2Ffoo@db.example.com:5432/mydb",
 		},
 		{
 			name: "mysql all fields",
@@ -331,7 +343,19 @@ func TestBuildDSN(t *testing.T) {
 				Port:     3306,
 				Database: "app",
 			},
-			want: "root:toor@mysql.local:3306/app",
+			want: "root:toor@tcp(mysql.local:3306)/app",
+		},
+		{
+			name: "mysql special chars in password",
+			conn: SavedConnection{
+				Adapter:  "mysql",
+				User:     "root",
+				Password: "p@ss/word",
+				Host:     "mysql.local",
+				Port:     3306,
+				Database: "app",
+			},
+			want: "root:p%40ss%2Fword@tcp(mysql.local:3306)/app", // url.QueryEscape
 		},
 		{
 			name: "mysql with DSN field set",
@@ -374,19 +398,19 @@ func TestBuildDSN(t *testing.T) {
 			want: "/data/test.duckdb",
 		},
 		{
-			name: "network adapter no port no database",
+			name: "postgres no port no database",
 			conn: SavedConnection{
 				Adapter: "postgres",
 				Host:    "myhost",
 			},
-			want: "myhost",
+			want: "postgres://myhost",
 		},
 		{
-			name: "network adapter empty fields defaults to localhost",
+			name: "postgres empty fields defaults to localhost",
 			conn: SavedConnection{
 				Adapter: "postgres",
 			},
-			want: "localhost",
+			want: "postgres://localhost",
 		},
 	}
 
