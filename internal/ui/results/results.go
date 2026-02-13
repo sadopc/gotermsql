@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 	"github.com/sadopc/gotermsql/internal/adapter"
 	appmsg "github.com/sadopc/gotermsql/internal/msg"
 	"github.com/sadopc/gotermsql/internal/theme"
@@ -34,12 +35,14 @@ const maxBufferedRows = 5000
 type Model struct {
 	table     table.Model
 	columns   []adapter.ColumnMeta
-	rows      [][]string          // current page of rows in memory
-	allRows   [][]string          // all loaded rows (for non-streaming results)
-	totalRows int64               // total row count (-1 if unknown)
-	offset    int                 // current scroll offset in the full dataset
-	pageSize  int                 // rows per page
-	iterator  adapter.RowIterator // for streaming results
+	tableCols []table.Column        // computed column definitions for rendering
+	rows      [][]string            // current page of rows in memory
+	allRows   [][]string            // all loaded rows (for non-streaming results)
+	totalRows int64                 // total row count (-1 if unknown)
+	offset    int                   // current scroll offset in the full dataset
+	viewTop   int                   // first visible row index for custom rendering
+	pageSize  int                   // rows per page
+	iterator  adapter.RowIterator   // for streaming results
 	tabID     int
 	width     int
 	height    int
@@ -109,6 +112,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		// Delegate all other key handling to the underlying table.
 		var cmd tea.Cmd
 		m.table, cmd = m.table.Update(msg)
+		m.updateViewTop()
 		return m, cmd
 
 	case appmsg.QueryResultMsg:
@@ -200,8 +204,8 @@ func (m Model) View() string {
 		return m.wrapBorder(placeholder, contentHeight)
 	}
 
-	// Render table.
-	tableView := m.table.View()
+	// Render table with custom zebra striping.
+	tableView := m.renderTable()
 
 	// Build footer.
 	footer := m.buildFooter()
@@ -238,6 +242,7 @@ func (m *Model) SetResults(result *adapter.QueryResult) {
 	m.allRows = result.Rows
 	m.rows = result.Rows
 	m.totalRows = result.RowCount
+	m.viewTop = 0
 	if m.totalRows < 0 {
 		m.totalRows = int64(len(result.Rows))
 	}
@@ -254,14 +259,15 @@ func (m *Model) SetIterator(iter adapter.RowIterator) {
 	m.columns = iter.Columns()
 	m.totalRows = iter.TotalRows()
 	m.offset = 0
+	m.viewTop = 0
 	m.err = nil
 	m.message = ""
 	m.allRows = nil
 	m.rows = nil
 
 	// Build column headers immediately so the table structure is visible.
-	tableCols := autoSizeColumns(m.columns, nil, m.contentWidth())
-	m.table.SetColumns(tableCols)
+	m.tableCols = autoSizeColumns(m.columns, nil, m.contentWidth())
+	m.table.SetColumns(m.tableCols)
 	m.table.SetRows(nil)
 }
 
@@ -288,8 +294,8 @@ func (m *Model) SetSize(w, h int) {
 
 	// Recalculate column widths if we have data.
 	if len(m.columns) > 0 {
-		tableCols := autoSizeColumns(m.columns, m.rows, m.contentWidth())
-		m.table.SetColumns(tableCols)
+		m.tableCols = autoSizeColumns(m.columns, m.rows, m.contentWidth())
+		m.table.SetColumns(m.tableCols)
 	}
 }
 
@@ -379,8 +385,8 @@ func (m *Model) CloseIterator() {
 
 // rebuildTable recalculates columns and repopulates the table widget.
 func (m *Model) rebuildTable() {
-	tableCols := autoSizeColumns(m.columns, m.rows, m.contentWidth())
-	m.table.SetColumns(tableCols)
+	m.tableCols = autoSizeColumns(m.columns, m.rows, m.contentWidth())
+	m.table.SetColumns(m.tableCols)
 	m.rebuildTableRows()
 }
 
@@ -400,6 +406,133 @@ func (m *Model) contentWidth() int {
 		w = 10
 	}
 	return w
+}
+
+// visibleDataHeight returns the number of data rows that can be displayed,
+// accounting for the header row (1 line) and its bottom border (1 line).
+func (m Model) visibleDataHeight() int {
+	innerH := m.height - 3 // border top/bottom + footer
+	h := innerH - 2        // header + border line
+	if h < 1 {
+		h = 1
+	}
+	return h
+}
+
+// updateViewTop adjusts the scroll offset so the cursor remains visible.
+func (m *Model) updateViewTop() {
+	cursor := m.table.Cursor()
+	visH := m.visibleDataHeight()
+	if cursor < m.viewTop {
+		m.viewTop = cursor
+	}
+	if cursor >= m.viewTop+visH {
+		m.viewTop = cursor - visH + 1
+	}
+	if m.viewTop < 0 {
+		m.viewTop = 0
+	}
+}
+
+// renderTable produces the custom table view with zebra-striped rows.
+func (m Model) renderTable() string {
+	if len(m.tableCols) == 0 {
+		return ""
+	}
+
+	th := theme.Current
+	contentW := m.contentWidth()
+	visH := m.visibleDataHeight()
+
+	var sb strings.Builder
+
+	// Header row.
+	sb.WriteString(m.renderHeader(th, contentW))
+	sb.WriteByte('\n')
+
+	// Header bottom border.
+	sb.WriteString(strings.Repeat("─", contentW))
+	sb.WriteByte('\n')
+
+	// Data rows.
+	cursor := m.table.Cursor()
+	nRows := len(m.rows)
+	for i := 0; i < visH; i++ {
+		rowIdx := m.viewTop + i
+		if rowIdx >= nRows {
+			// Pad remaining lines so the table height stays constant.
+			sb.WriteString(strings.Repeat(" ", contentW))
+		} else {
+			sb.WriteString(m.renderDataRow(th, rowIdx, rowIdx == cursor, contentW))
+		}
+		if i < visH-1 {
+			sb.WriteByte('\n')
+		}
+	}
+
+	return sb.String()
+}
+
+// renderHeader renders the column header row.
+func (m Model) renderHeader(th *theme.Theme, totalWidth int) string {
+	var sb strings.Builder
+	used := 0
+	for _, col := range m.tableCols {
+		cellWidth := col.Width + 2 // +2 for Padding(0,1)
+		text := runewidth.Truncate(col.Title, col.Width, "…")
+		text = padRight(text, col.Width)
+		rendered := th.ResultsHeader.Render(text)
+		sb.WriteString(rendered)
+		used += cellWidth
+	}
+	// Pad remainder so the header background fills the full width.
+	if used < totalWidth {
+		sb.WriteString(th.ResultsHeader.Padding(0).Render(strings.Repeat(" ", totalWidth-used)))
+	}
+	return sb.String()
+}
+
+// renderDataRow renders a single data row with zebra striping.
+func (m Model) renderDataRow(th *theme.Theme, rowIdx int, selected bool, totalWidth int) string {
+	var cellStyle lipgloss.Style
+	switch {
+	case selected:
+		cellStyle = th.ResultsSelectedRow
+	case rowIdx%2 == 1:
+		cellStyle = th.ResultsCellAlt
+	default:
+		cellStyle = th.ResultsCell
+	}
+
+	row := m.rows[rowIdx]
+	var sb strings.Builder
+	used := 0
+	for j, col := range m.tableCols {
+		cellWidth := col.Width + 2 // +2 for Padding(0,1)
+		var val string
+		if j < len(row) {
+			val = row[j]
+		}
+		text := runewidth.Truncate(val, col.Width, "…")
+		text = padRight(text, col.Width)
+		rendered := cellStyle.Render(text)
+		sb.WriteString(rendered)
+		used += cellWidth
+	}
+	// Fill remaining width so the row background extends to the edge.
+	if used < totalWidth {
+		sb.WriteString(cellStyle.Padding(0).Render(strings.Repeat(" ", totalWidth-used)))
+	}
+	return sb.String()
+}
+
+// padRight pads s with spaces on the right so its display width equals w.
+func padRight(s string, w int) string {
+	sw := runewidth.StringWidth(s)
+	if sw >= w {
+		return s
+	}
+	return s + strings.Repeat(" ", w-sw)
 }
 
 // buildFooter constructs the row count and timing footer line.

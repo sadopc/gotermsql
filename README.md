@@ -104,7 +104,7 @@ gotermsql --adapter postgres -H localhost -p 5432 -u admin -d production
 | Key | Action |
 |-----|--------|
 | `Tab` | Cycle focus: Editor -> Results -> Sidebar |
-| `Shift+Tab` | Cycle focus backwards |
+| `Shift+Tab` / `Ctrl+J` | Cycle focus backwards |
 | `Alt+1/2/3` | Jump to Sidebar/Editor/Results |
 | `Ctrl+Arrow` | Resize panes |
 

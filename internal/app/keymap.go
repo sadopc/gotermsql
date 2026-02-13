@@ -59,8 +59,8 @@ func StandardKeyMap() KeyMap {
 			key.WithHelp("tab", "next pane"),
 		),
 		FocusPrev: key.NewBinding(
-			key.WithKeys("shift+tab"),
-			key.WithHelp("shift+tab", "prev pane"),
+			key.WithKeys("shift+tab", "ctrl+j"),
+			key.WithHelp("shift+tab/ctrl+j", "prev pane"),
 		),
 		FocusSidebar: key.NewBinding(
 			key.WithKeys("alt+1"),

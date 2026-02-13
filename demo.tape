@@ -1,4 +1,4 @@
-# gotermsql Demo — PostgreSQL
+# gotermsql Demo — SQLite
 # VHS tape file - https://github.com/charmbracelet/vhs
 
 Output demo.gif
@@ -12,8 +12,8 @@ Set Theme "Catppuccin Mocha"
 Set TypingSpeed 40ms
 Set PlaybackSpeed 0.5
 
-# Start gotermsql with PostgreSQL
-Type "bin/gotermsql postgres://localhost:5432/gotermsql_test?sslmode=disable"
+# Start gotermsql with SQLite demo database
+Type "bin/gotermsql --adapter sqlite --file demo.db"
 Enter
 Sleep 2s
 
@@ -28,22 +28,30 @@ Sleep 200ms
 Ctrl+g
 Sleep 2s
 
-# Move to results to see the data
-Tab
+# Switch to results pane (Ctrl+J cycles focus)
+Ctrl+j
 Sleep 1s
 
-# Navigate result rows
+# Navigate result rows — see cursor highlight + alternating colors
 Down
-Sleep 200ms
+Sleep 300ms
 Down
-Sleep 200ms
+Sleep 300ms
 Down
-Sleep 200ms
+Sleep 300ms
+Down
+Sleep 300ms
 
-# Back to editor via Tab cycle (results -> sidebar -> editor)
-Tab
+# Show help overlay from results pane
+Type "?"
+Sleep 3s
+
+# Close help
+Escape
 Sleep 500ms
-Tab
+
+# Back to editor (Ctrl+J: results -> editor)
+Ctrl+j
 Sleep 500ms
 
 # New tab — show autocomplete for a JOIN query
@@ -51,7 +59,7 @@ Ctrl+t
 Sleep 1s
 
 # Type query, let autocomplete appear on FROM
-Type "SELECT u.name, p.name AS product, p.price, o.quantity FROM ord"
+Type "SELECT u.name, p.name AS product, p.price, o.amount FROM ord"
 Sleep 800ms
 
 # Accept autocomplete suggestion (orders)
@@ -59,7 +67,7 @@ Tab
 Sleep 300ms
 
 # Continue typing
-Type " o JOIN users u ON u.id = o.user_id JOIN products p ON p.id = o.product_id ORDER BY p.price DESC;"
+Type " o JOIN users u ON u.id = o.user_id JOIN products p ON p.name = o.product ORDER BY p.price DESC;"
 Sleep 500ms
 
 # Execute
@@ -68,10 +76,10 @@ Sleep 200ms
 Ctrl+g
 Sleep 2s
 
-# Switch to sidebar to browse schema (Tab from editor -> results -> sidebar)
-Tab
+# Switch to sidebar to browse schema (Ctrl+J twice: editor -> results -> sidebar)
+Ctrl+j
 Sleep 300ms
-Tab
+Ctrl+j
 Sleep 500ms
 
 # Navigate schema tree
@@ -90,21 +98,11 @@ Sleep 300ms
 Down
 Sleep 500ms
 
-# Show help overlay (? works when sidebar is focused)
-Type "?"
-Sleep 3s
-
-# Close help
-Escape
-Sleep 500ms
-
-# Back to editor for aggregate query
-Tab
-Sleep 500ms
+# New tab for aggregate query
 Ctrl+t
 Sleep 500ms
 
-Type "SELECT p.category, COUNT(*) AS order_count, SUM(o.quantity * p.price) AS revenue FROM orders o JOIN products p ON p.id = o.product_id GROUP BY p.category ORDER BY revenue DESC;"
+Type "SELECT p.category, COUNT(*) AS order_count, SUM(o.amount) AS revenue FROM orders o JOIN products p ON p.name = o.product GROUP BY p.category ORDER BY revenue DESC;"
 Sleep 500ms
 
 # Execute
@@ -112,6 +110,18 @@ Escape
 Sleep 200ms
 Ctrl+g
 Sleep 2s
+
+# Show results with zebra striping
+Ctrl+j
+Sleep 1s
+Down
+Sleep 300ms
+Down
+Sleep 300ms
+Down
+Sleep 300ms
+
+Sleep 1s
 
 # Quit
 Ctrl+q

@@ -566,7 +566,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyMsg) tea.Cmd {
 		m.cycleFocus(1)
 		return nil
 
-	case msg.String() == "shift+tab":
+	case msg.String() == "shift+tab", msg.String() == "ctrl+j":
 		m.cycleFocus(-1)
 		return nil
 
@@ -908,7 +908,7 @@ func (m *Model) renderHelpScreen(th *theme.Theme) string {
 
 	b.WriteString(sectionStyle.Render("  Navigation"))
 	b.WriteString("\n")
-	b.WriteString(line("Shift+Tab", "Switch pane"))
+	b.WriteString(line("Shift+Tab/Ctrl+J", "Switch pane"))
 	b.WriteString("\n")
 	b.WriteString(line("Alt+1 / 2 / 3", "Jump to sidebar / editor / results"))
 	b.WriteString("\n")

@@ -42,6 +42,7 @@ type Theme struct {
 	ResultsBorder      lipgloss.Style
 	ResultsHeader      lipgloss.Style
 	ResultsCell        lipgloss.Style
+	ResultsCellAlt     lipgloss.Style
 	ResultsSelectedRow lipgloss.Style
 	ResultsNull        lipgloss.Style
 
@@ -153,13 +154,19 @@ func newDefaultTheme() *Theme {
 		ResultsHeader: lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("#569CD6")).
-			Background(lipgloss.Color("#252526")),
+			Background(lipgloss.Color("#252526")).
+			Padding(0, 1),
 		ResultsCell: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#D4D4D4")).
 			Padding(0, 1),
+		ResultsCellAlt: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#D4D4D4")).
+			Background(lipgloss.Color("#2A2A2A")).
+			Padding(0, 1),
 		ResultsSelectedRow: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#FFFFFF")).
-			Background(lipgloss.Color("#264F78")),
+			Background(lipgloss.Color("#264F78")).
+			Padding(0, 1),
 		ResultsNull: lipgloss.NewStyle().
 			Italic(true).
 			Foreground(lipgloss.Color("#808080")),
@@ -335,13 +342,19 @@ func newLightTheme() *Theme {
 		ResultsHeader: lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("#0451A5")).
-			Background(lipgloss.Color("#F3F3F3")),
+			Background(lipgloss.Color("#F3F3F3")).
+			Padding(0, 1),
 		ResultsCell: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#1E1E1E")).
 			Padding(0, 1),
+		ResultsCellAlt: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#1E1E1E")).
+			Background(lipgloss.Color("#F5F5F5")).
+			Padding(0, 1),
 		ResultsSelectedRow: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#FFFFFF")).
-			Background(lipgloss.Color("#0060C0")),
+			Background(lipgloss.Color("#0060C0")).
+			Padding(0, 1),
 		ResultsNull: lipgloss.NewStyle().
 			Italic(true).
 			Foreground(lipgloss.Color("#A0A0A0")),
@@ -518,13 +531,19 @@ func newMonokaiTheme() *Theme {
 		ResultsHeader: lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("#A6E22E")).
-			Background(lipgloss.Color("#3E3D32")),
+			Background(lipgloss.Color("#3E3D32")).
+			Padding(0, 1),
 		ResultsCell: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#F8F8F2")).
 			Padding(0, 1),
+		ResultsCellAlt: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#F8F8F2")).
+			Background(lipgloss.Color("#2D2E27")).
+			Padding(0, 1),
 		ResultsSelectedRow: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#F8F8F2")).
-			Background(lipgloss.Color("#49483E")),
+			Background(lipgloss.Color("#49483E")).
+			Padding(0, 1),
 		ResultsNull: lipgloss.NewStyle().
 			Italic(true).
 			Foreground(lipgloss.Color("#75715E")),
