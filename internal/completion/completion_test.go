@@ -844,8 +844,8 @@ func TestKeywordsForDialect(t *testing.T) {
 		mustNotContain []string
 	}{
 		{
-			dialect:     "postgres",
-			mustContain: []string{"SELECT", "SERIAL", "RETURNING", "MATERIALIZED"},
+			dialect:        "postgres",
+			mustContain:    []string{"SELECT", "SERIAL", "RETURNING", "MATERIALIZED"},
 			mustNotContain: []string{"AUTO_INCREMENT", "PRAGMA", "PIVOT"},
 		},
 		{
@@ -853,18 +853,18 @@ func TestKeywordsForDialect(t *testing.T) {
 			mustContain: []string{"SELECT", "SERIAL"},
 		},
 		{
-			dialect:     "mysql",
-			mustContain: []string{"SELECT", "AUTO_INCREMENT", "ENGINE", "SHOW"},
+			dialect:        "mysql",
+			mustContain:    []string{"SELECT", "AUTO_INCREMENT", "ENGINE", "SHOW"},
 			mustNotContain: []string{"SERIAL", "PRAGMA", "PIVOT"},
 		},
 		{
-			dialect:     "sqlite",
-			mustContain: []string{"SELECT", "PRAGMA", "AUTOINCREMENT", "ROWID"},
+			dialect:        "sqlite",
+			mustContain:    []string{"SELECT", "PRAGMA", "AUTOINCREMENT", "ROWID"},
 			mustNotContain: []string{"SERIAL", "AUTO_INCREMENT", "PIVOT"},
 		},
 		{
-			dialect:     "duckdb",
-			mustContain: []string{"SELECT", "PIVOT", "UNPIVOT", "QUALIFY"},
+			dialect:        "duckdb",
+			mustContain:    []string{"SELECT", "PIVOT", "UNPIVOT", "QUALIFY"},
 			mustNotContain: []string{"SERIAL", "AUTO_INCREMENT", "PRAGMA"},
 		},
 		{
@@ -963,11 +963,11 @@ func TestInsideStringLiteral(t *testing.T) {
 	}{
 		{"", false},
 		{"SELECT", false},
-		{"SELECT 'hello'", false},          // matched pair
-		{"SELECT 'hello", true},            // unmatched single
-		{"SELECT 'it''s'", false},          // escaped single quotes (even count)
-		{"SELECT 'it''s", true},            // odd count
-		{"WHERE name = '", true},           // opening quote
+		{"SELECT 'hello'", false}, // matched pair
+		{"SELECT 'hello", true},   // unmatched single
+		{"SELECT 'it''s'", false}, // escaped single quotes (even count)
+		{"SELECT 'it''s", true},   // odd count
+		{"WHERE name = '", true},  // opening quote
 		{"WHERE name = 'test' AND x = '", true},
 	}
 

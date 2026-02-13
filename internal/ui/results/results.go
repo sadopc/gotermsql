@@ -27,21 +27,21 @@ type fetchedPageMsg struct {
 // Model is the results table component. It wraps bubbles/table with support
 // for streaming large result sets via adapter.RowIterator.
 type Model struct {
-	table    table.Model
-	columns  []adapter.ColumnMeta
-	rows     [][]string          // current page of rows in memory
-	allRows  [][]string          // all loaded rows (for non-streaming results)
-	totalRows int64              // total row count (-1 if unknown)
-	offset   int                 // current scroll offset in the full dataset
-	pageSize int                 // rows per page
-	iterator adapter.RowIterator // for streaming results
-	width    int
-	height   int
-	focused  bool
-	loading  bool
-	message  string        // status message ("INSERT 0 1", etc.)
+	table     table.Model
+	columns   []adapter.ColumnMeta
+	rows      [][]string          // current page of rows in memory
+	allRows   [][]string          // all loaded rows (for non-streaming results)
+	totalRows int64               // total row count (-1 if unknown)
+	offset    int                 // current scroll offset in the full dataset
+	pageSize  int                 // rows per page
+	iterator  adapter.RowIterator // for streaming results
+	width     int
+	height    int
+	focused   bool
+	loading   bool
+	message   string // status message ("INSERT 0 1", etc.)
 	queryTime time.Duration
-	err      error
+	err       error
 }
 
 // New creates a new results model with sensible defaults.
@@ -198,7 +198,10 @@ func (m Model) View() string {
 func (m *Model) SetResults(result *adapter.QueryResult) {
 	m.err = nil
 	m.loading = false
-	m.iterator = nil
+	if m.iterator != nil {
+		m.iterator.Close()
+		m.iterator = nil
+	}
 	m.offset = 0
 	m.queryTime = result.Duration
 
@@ -228,6 +231,9 @@ func (m *Model) SetResults(result *adapter.QueryResult) {
 
 // SetIterator configures the model for streaming mode with the given iterator.
 func (m *Model) SetIterator(iter adapter.RowIterator) {
+	if m.iterator != nil {
+		m.iterator.Close()
+	}
 	m.iterator = iter
 	m.columns = iter.Columns()
 	m.totalRows = iter.TotalRows()

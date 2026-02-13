@@ -485,9 +485,9 @@ func TestDisplayString(t *testing.T) {
 		{
 			name: "DisplayString preserves adapter casing",
 			conn: SavedConnection{
-				Adapter: "PostgreSQL",
-				Host:    "myhost",
-				Port:    5432,
+				Adapter:  "PostgreSQL",
+				Host:     "myhost",
+				Port:     5432,
 				Database: "db",
 			},
 			// Adapter is not lowered for the display prefix

@@ -447,19 +447,9 @@ func TestToggleKeyModeMsg(t *testing.T) {
 	_ = ToggleKeyModeMsg{}
 }
 
-func TestToggleSidebarMsg(t *testing.T) {
-	// ToggleSidebarMsg has no fields, just verify it can be created
-	_ = ToggleSidebarMsg{}
-}
-
 func TestRefreshSchemaMsg(t *testing.T) {
 	// RefreshSchemaMsg has no fields
 	_ = RefreshSchemaMsg{}
-}
-
-func TestOpenConnManagerMsg(t *testing.T) {
-	// OpenConnManagerMsg has no fields
-	_ = OpenConnManagerMsg{}
 }
 
 func TestOpenHistoryMsg(t *testing.T) {

@@ -43,15 +43,15 @@ type TreeNode struct {
 
 // Model is the schema browser sidebar.
 type Model struct {
-	nodes    []*TreeNode
-	flat     []*TreeNode // flattened visible nodes
-	cursor   int
-	offset   int
-	width    int
-	height   int
-	focused  bool
-	filter   string
-	loading  bool
+	nodes   []*TreeNode
+	flat    []*TreeNode // flattened visible nodes
+	cursor  int
+	offset  int
+	width   int
+	height  int
+	focused bool
+	filter  string
+	loading bool
 }
 
 // New creates a new sidebar.

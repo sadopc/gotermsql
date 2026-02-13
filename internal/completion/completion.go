@@ -409,7 +409,7 @@ func (e *Engine) functionCompletions() []adapter.CompletionItem {
 type candidateLabels []adapter.CompletionItem
 
 func (c candidateLabels) String(i int) string { return c[i].Label }
-func (c candidateLabels) Len() int             { return len(c) }
+func (c candidateLabels) Len() int            { return len(c) }
 
 // fuzzyMatch filters and ranks completion items by fuzzy matching against the prefix.
 func fuzzyMatch(prefix string, items []adapter.CompletionItem) []adapter.CompletionItem {

@@ -26,8 +26,8 @@ func init() {
 
 type mysqlAdapter struct{}
 
-func (a *mysqlAdapter) Name() string        { return "mysql" }
-func (a *mysqlAdapter) DefaultPort() int    { return 3306 }
+func (a *mysqlAdapter) Name() string     { return "mysql" }
+func (a *mysqlAdapter) DefaultPort() int { return 3306 }
 
 func (a *mysqlAdapter) Connect(ctx context.Context, dsn string) (adapter.Connection, error) {
 	goDriverDSN, dbName, err := normalizeDSN(dsn)
@@ -53,10 +53,10 @@ func (a *mysqlAdapter) Connect(ctx context.Context, dsn string) (adapter.Connect
 	}
 
 	return &mysqlConn{
-		db:       db,
-		dsn:      goDriverDSN,
-		dbName:   dbName,
-		connID:   connID,
+		db:     db,
+		dsn:    goDriverDSN,
+		dbName: dbName,
+		connID: connID,
 	}, nil
 }
 
@@ -233,9 +233,9 @@ func (c *mysqlConn) Columns(ctx context.Context, db, schemaName, table string) (
 	var cols []schema.Column
 	for rows.Next() {
 		var (
-			col        schema.Column
-			nullable   string
-			isPKInt    int
+			col      schema.Column
+			nullable string
+			isPKInt  int
 		)
 		if err := rows.Scan(&col.Name, &col.Type, &nullable, &col.Default, &isPKInt); err != nil {
 			return nil, err

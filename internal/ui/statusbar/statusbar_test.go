@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	appmsg "github.com/sadopc/gotermsql/internal/msg"
 	"github.com/sadopc/gotermsql/internal/adapter"
+	appmsg "github.com/sadopc/gotermsql/internal/msg"
 	"github.com/sadopc/gotermsql/internal/schema"
 	"github.com/sadopc/gotermsql/internal/theme"
 )
@@ -22,8 +22,8 @@ type mockConnection struct {
 	adapterName string
 }
 
-func (c *mockConnection) DatabaseName() string  { return c.dbName }
-func (c *mockConnection) AdapterName() string   { return c.adapterName }
+func (c *mockConnection) DatabaseName() string { return c.dbName }
+func (c *mockConnection) AdapterName() string  { return c.adapterName }
 func (c *mockConnection) Databases(_ context.Context) ([]schema.Database, error) {
 	return nil, nil
 }

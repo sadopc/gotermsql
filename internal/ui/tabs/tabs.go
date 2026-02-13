@@ -18,10 +18,10 @@ type Tab struct {
 
 // Model is the tab bar component.
 type Model struct {
-	tabs      []Tab
-	active    int
-	nextID    int
-	width     int
+	tabs   []Tab
+	active int
+	nextID int
+	width  int
 }
 
 // New creates a new tab bar with one default tab.

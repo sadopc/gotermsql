@@ -27,7 +27,7 @@ func init() {
 
 type duckdbAdapter struct{}
 
-func (a *duckdbAdapter) Name() string    { return "duckdb" }
+func (a *duckdbAdapter) Name() string     { return "duckdb" }
 func (a *duckdbAdapter) DefaultPort() int { return 0 }
 
 func (a *duckdbAdapter) Connect(ctx context.Context, dsn string) (adapter.Connection, error) {

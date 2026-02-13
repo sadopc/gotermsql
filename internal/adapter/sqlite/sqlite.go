@@ -23,8 +23,8 @@ func init() {
 // sqliteAdapter implements adapter.Adapter for SQLite databases.
 type sqliteAdapter struct{}
 
-func (a *sqliteAdapter) Name() string        { return "sqlite" }
-func (a *sqliteAdapter) DefaultPort() int    { return 0 }
+func (a *sqliteAdapter) Name() string     { return "sqlite" }
+func (a *sqliteAdapter) DefaultPort() int { return 0 }
 
 func (a *sqliteAdapter) Connect(ctx context.Context, dsn string) (adapter.Connection, error) {
 	dsn = normalizeDSN(dsn)
@@ -74,8 +74,8 @@ type sqliteConn struct {
 	dsn    string
 	dbName string
 
-	mu        sync.Mutex
-	cancelFn  context.CancelFunc
+	mu       sync.Mutex
+	cancelFn context.CancelFunc
 }
 
 func (c *sqliteConn) AdapterName() string  { return "sqlite" }
@@ -139,12 +139,12 @@ func (c *sqliteConn) Columns(ctx context.Context, db, schemaName, table string) 
 	var columns []schema.Column
 	for rows.Next() {
 		var (
-			cid        int
-			name       string
-			colType    string
-			notNull    int
-			dfltValue  sql.NullString
-			pk         int
+			cid       int
+			name      string
+			colType   string
+			notNull   int
+			dfltValue sql.NullString
+			pk        int
 		)
 		if err := rows.Scan(&cid, &name, &colType, &notNull, &dfltValue, &pk); err != nil {
 			return nil, fmt.Errorf("sqlite columns scan: %w", err)
@@ -178,10 +178,10 @@ func (c *sqliteConn) Indexes(ctx context.Context, db, schemaName, table string) 
 	var entries []indexEntry
 	for listRows.Next() {
 		var (
-			seq    int
-			name   string
-			unique int
-			origin string
+			seq     int
+			name    string
+			unique  int
+			origin  string
 			partial int
 		)
 		if err := listRows.Scan(&seq, &name, &unique, &origin, &partial); err != nil {

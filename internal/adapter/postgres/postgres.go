@@ -26,8 +26,8 @@ func init() {
 // postgresAdapter implements adapter.Adapter for PostgreSQL.
 type postgresAdapter struct{}
 
-func (a *postgresAdapter) Name() string        { return "postgres" }
-func (a *postgresAdapter) DefaultPort() int    { return 5432 }
+func (a *postgresAdapter) Name() string     { return "postgres" }
+func (a *postgresAdapter) DefaultPort() int { return 5432 }
 
 func (a *postgresAdapter) Connect(ctx context.Context, dsn string) (adapter.Connection, error) {
 	pool, err := pgxpool.New(ctx, dsn)
@@ -69,11 +69,11 @@ func extractDBName(dsn string) string {
 
 // pgConn implements adapter.Connection for PostgreSQL.
 type pgConn struct {
-	pool      *pgxpool.Pool
-	dsn       string
-	dbName    string
-	cancelMu  sync.Mutex
-	cancelFn  context.CancelFunc
+	pool     *pgxpool.Pool
+	dsn      string
+	dbName   string
+	cancelMu sync.Mutex
+	cancelFn context.CancelFunc
 }
 
 func (c *pgConn) DatabaseName() string { return c.dbName }
@@ -308,9 +308,9 @@ func (c *pgConn) Indexes(ctx context.Context, db, schemaName, table string) ([]s
 	var indexes []schema.Index
 	for rows.Next() {
 		var (
-			name    string
-			cols    []string
-			unique  bool
+			name   string
+			cols   []string
+			unique bool
 		)
 		if err := rows.Scan(&name, &cols, &unique); err != nil {
 			return nil, fmt.Errorf("indexes scan: %w", err)
@@ -678,7 +678,7 @@ func (c *pgConn) Completions(ctx context.Context) ([]adapter.CompletionItem, err
 		}
 
 		type tableInfo struct {
-			name     string
+			name      string
 			tableType string
 		}
 		var tables []tableInfo

@@ -78,8 +78,8 @@ type ColumnMeta struct {
 
 // CompletionItem is a schema-aware autocomplete candidate.
 type CompletionItem struct {
-	Label string
-	Kind  CompletionKind
+	Label  string
+	Kind   CompletionKind
 	Detail string
 }
 

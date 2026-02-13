@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -31,6 +33,7 @@ type TabState struct {
 	Editor  editor.Model
 	Results results.Model
 	Query   string
+	RunID   uint64
 }
 
 // Model is the root application model.
@@ -46,13 +49,13 @@ type Model struct {
 	focusedPane Pane
 
 	// Components
-	sidebar    sidebar.Model
-	tabs       tabs.Model
-	statusbar  statusbar.Model
-	connMgr    connmgr.Model
-	autocomp   autocomplete.Model
-	help       help.Model
-	spinner    spinner.Model
+	sidebar   sidebar.Model
+	tabs      tabs.Model
+	statusbar statusbar.Model
+	connMgr   connmgr.Model
+	autocomp  autocomplete.Model
+	help      help.Model
+	spinner   spinner.Model
 
 	// Per-tab state
 	tabStates map[int]*TabState
@@ -60,6 +63,7 @@ type Model struct {
 	// Database
 	conn       adapter.Connection
 	cancelFunc context.CancelFunc
+	connGen    uint64
 
 	// Engine
 	compEngine *completion.Engine
@@ -198,7 +202,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case ConnectMsg:
+		if m.conn != nil {
+			m.conn.Close()
+		}
 		m.conn = msg.Conn
+		m.connGen++
 		m.showConnMgr = false
 		m.connMgr.Hide()
 		var cmd tea.Cmd
@@ -216,19 +224,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, sbCmd)
 
 	case SchemaLoadedMsg:
+		if msg.ConnGen != m.connGen {
+			break // stale schema from previous connection
+		}
 		m.sidebar.SetLoading(false)
 		var cmd tea.Cmd
 		m.sidebar, cmd = m.sidebar.Update(msg)
 		cmds = append(cmds, cmd)
 		// Update completion engine
-		m.compEngine.UpdateSchema(msg.Databases)
 		if m.conn != nil {
 			m.compEngine = completion.NewEngine(m.conn.AdapterName())
 			m.compEngine.UpdateSchema(msg.Databases)
 			m.autocomp.SetEngine(m.compEngine)
+		} else {
+			m.compEngine.UpdateSchema(msg.Databases)
 		}
 
 	case SchemaErrMsg:
+		if msg.ConnGen != m.connGen {
+			break // stale error from previous connection
+		}
 		m.sidebar.SetLoading(false)
 		var sbCmd tea.Cmd
 		m.statusbar, sbCmd = m.statusbar.Update(StatusMsg{
@@ -240,53 +255,55 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.executeQuery(msg.Query, msg.TabID))
 
 	case QueryStartedMsg:
-		m.executing = true
 		ts := m.tabStates[msg.TabID]
-		if ts != nil {
+		if ts != nil && msg.RunID == ts.RunID {
+			m.executing = true
 			ts.Results.SetLoading(true)
 		}
 
 	case QueryResultMsg:
-		m.executing = false
 		ts := m.tabStates[msg.TabID]
-		if ts != nil {
+		if ts != nil && msg.RunID == ts.RunID {
+			m.executing = false
 			ts.Results.SetLoading(false)
 			if msg.Result != nil {
 				ts.Results.SetResults(msg.Result)
 			}
-		}
-		var sbCmd tea.Cmd
-		m.statusbar, sbCmd = m.statusbar.Update(msg)
-		cmds = append(cmds, sbCmd)
-		// Save to history
-		if m.history != nil && msg.Result != nil {
-			m.history.Add(history.HistoryEntry{
-				Query:        ts.Query,
-				Adapter:      m.conn.AdapterName(),
-				DatabaseName: m.conn.DatabaseName(),
-				DurationMS:   msg.Result.Duration.Milliseconds(),
-				RowCount:     msg.Result.RowCount,
-			})
+			// Save to history
+			if m.history != nil && m.conn != nil && msg.Result != nil {
+				m.history.Add(history.HistoryEntry{
+					Query:        ts.Query,
+					Adapter:      m.conn.AdapterName(),
+					DatabaseName: m.conn.DatabaseName(),
+					ExecutedAt:   time.Now(),
+					DurationMS:   msg.Result.Duration.Milliseconds(),
+					RowCount:     msg.Result.RowCount,
+				})
+			}
+			var sbCmd tea.Cmd
+			m.statusbar, sbCmd = m.statusbar.Update(msg)
+			cmds = append(cmds, sbCmd)
 		}
 
 	case QueryErrMsg:
-		m.executing = false
 		ts := m.tabStates[msg.TabID]
-		if ts != nil {
+		if ts != nil && msg.RunID == ts.RunID {
+			m.executing = false
 			ts.Results.SetLoading(false)
 			ts.Results.SetError(msg.Err)
-		}
-		var sbCmd tea.Cmd
-		m.statusbar, sbCmd = m.statusbar.Update(msg)
-		cmds = append(cmds, sbCmd)
-		// Save error to history
-		if m.history != nil {
-			m.history.Add(history.HistoryEntry{
-				Query:        ts.Query,
-				Adapter:      m.conn.AdapterName(),
-				DatabaseName: m.conn.DatabaseName(),
-				IsError:      true,
-			})
+			// Save error to history
+			if m.history != nil && m.conn != nil {
+				m.history.Add(history.HistoryEntry{
+					Query:        ts.Query,
+					Adapter:      m.conn.AdapterName(),
+					DatabaseName: m.conn.DatabaseName(),
+					ExecutedAt:   time.Now(),
+					IsError:      true,
+				})
+			}
+			var sbCmd tea.Cmd
+			m.statusbar, sbCmd = m.statusbar.Update(msg)
+			cmds = append(cmds, sbCmd)
 		}
 
 	case NewTabMsg:
@@ -343,6 +360,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case connmgr.ConnectRequestMsg:
 		cmds = append(cmds, m.connect(msg.AdapterName, msg.DSN))
 
+	case ExportCompleteMsg:
+		var sbCmd tea.Cmd
+		m.statusbar, sbCmd = m.statusbar.Update(StatusMsg{
+			Text: fmt.Sprintf("Exported %d rows to %s", msg.RowCount, msg.Path),
+		})
+		cmds = append(cmds, sbCmd)
+
+	case ExportErrMsg:
+		var sbCmd tea.Cmd
+		m.statusbar, sbCmd = m.statusbar.Update(StatusMsg{
+			Text: "Export failed: " + msg.Err.Error(), IsError: true,
+		})
+		cmds = append(cmds, sbCmd)
+
 	case statusbar.ClearStatusMsg:
 		m.statusbar, _ = m.statusbar.Update(msg)
 
@@ -360,6 +391,21 @@ func (m *Model) handleGlobalKeys(msg tea.KeyMsg) tea.Cmd {
 	case msg.String() == "ctrl+q":
 		m.quitting = true
 		return tea.Quit
+
+	case msg.String() == "ctrl+c":
+		if m.executing {
+			if m.cancelFunc != nil {
+				m.cancelFunc()
+			}
+			if m.conn != nil {
+				m.conn.Cancel()
+			}
+			m.executing = false
+			var sbCmd tea.Cmd
+			m.statusbar, sbCmd = m.statusbar.Update(StatusMsg{Text: "Query cancelled"})
+			return sbCmd
+		}
+		return nil
 
 	case msg.String() == "f1":
 		m.showHelp = !m.showHelp
@@ -383,6 +429,9 @@ func (m *Model) handleGlobalKeys(msg tea.KeyMsg) tea.Cmd {
 			return m.loadSchema()
 		}
 		return nil
+
+	case msg.String() == "ctrl+e":
+		return m.exportResults()
 
 	case msg.String() == "ctrl+o":
 		m.connMgr.Show()
@@ -797,14 +846,15 @@ func (m *Model) renderHelpScreen(th *theme.Theme) string {
 
 func (m *Model) loadSchema() tea.Cmd {
 	conn := m.conn
+	gen := m.connGen
 	return func() tea.Msg {
 		if conn == nil {
-			return SchemaErrMsg{Err: adapter.ErrNotConnected}
+			return SchemaErrMsg{Err: adapter.ErrNotConnected, ConnGen: gen}
 		}
 		ctx := context.Background()
 		dbs, err := conn.Databases(ctx)
 		if err != nil {
-			return SchemaErrMsg{Err: err}
+			return SchemaErrMsg{Err: err, ConnGen: gen}
 		}
 
 		// Load full schema for each database
@@ -831,31 +881,36 @@ func (m *Model) loadSchema() tea.Cmd {
 			databases = append(databases, db)
 		}
 
-		return SchemaLoadedMsg{Databases: databases}
+		return SchemaLoadedMsg{Databases: databases, ConnGen: gen}
 	}
 }
 
 func (m *Model) executeQuery(query string, tabID int) tea.Cmd {
 	conn := m.conn
 	ts := m.tabStates[tabID]
-	if ts != nil {
-		ts.Query = query
+	if ts == nil {
+		return nil
 	}
+	ts.Query = query
+	ts.RunID++
+	runID := ts.RunID
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	m.cancelFunc = cancel
 
 	return tea.Batch(
-		func() tea.Msg { return QueryStartedMsg{TabID: tabID} },
+		func() tea.Msg { return QueryStartedMsg{TabID: tabID, RunID: runID} },
 		func() tea.Msg {
-			if conn == nil {
-				return QueryErrMsg{Err: adapter.ErrNotConnected, TabID: tabID}
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 			defer cancel()
+			if conn == nil {
+				return QueryErrMsg{Err: adapter.ErrNotConnected, TabID: tabID, RunID: runID}
+			}
 
 			result, err := conn.Execute(ctx, query)
 			if err != nil {
-				return QueryErrMsg{Err: err, TabID: tabID}
+				return QueryErrMsg{Err: err, TabID: tabID, RunID: runID}
 			}
-			return QueryResultMsg{Result: result, TabID: tabID}
+			return QueryResultMsg{Result: result, TabID: tabID, RunID: runID}
 		},
 	)
 }
@@ -863,6 +918,11 @@ func (m *Model) executeQuery(query string, tabID int) tea.Cmd {
 // SetConnection sets the initial database connection.
 func (m *Model) SetConnection(conn adapter.Connection, adapterName, dsn string) {
 	m.conn = conn
+}
+
+// Connection returns the current database connection, or nil if not connected.
+func (m Model) Connection() adapter.Connection {
+	return m.conn
 }
 
 // InitialConnect returns a command to connect on startup.
@@ -873,6 +933,32 @@ func (m Model) InitialConnect(adapterName, dsn string) tea.Cmd {
 // ShowConnManager shows the connection manager on startup.
 func (m *Model) ShowConnManager() {
 	m.connMgr.Show()
+}
+
+func (m *Model) exportResults() tea.Cmd {
+	ts := m.activeTabState()
+	if ts == nil {
+		return nil
+	}
+	cols := ts.Results.Columns()
+	rows := ts.Results.Rows()
+	if len(cols) == 0 || len(rows) == 0 {
+		return func() tea.Msg {
+			return ExportErrMsg{Err: fmt.Errorf("no results to export")}
+		}
+	}
+
+	return func() tea.Msg {
+		dir, err := os.Getwd()
+		if err != nil {
+			return ExportErrMsg{Err: err}
+		}
+		path := filepath.Join(dir, fmt.Sprintf("export_%s.csv", time.Now().Format("20060102_150405")))
+		if err := results.ExportCSV(path, cols, rows); err != nil {
+			return ExportErrMsg{Err: err}
+		}
+		return ExportCompleteMsg{Path: path, RowCount: int64(len(rows))}
+	}
 }
 
 func isTypingKey(msg tea.KeyMsg) bool {

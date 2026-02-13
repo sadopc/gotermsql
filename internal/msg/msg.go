@@ -82,11 +82,13 @@ type DisconnectMsg struct{}
 // SchemaLoadedMsg is sent when schema introspection completes.
 type SchemaLoadedMsg struct {
 	Databases []schema.Database
+	ConnGen   uint64
 }
 
 // SchemaErrMsg is sent when schema loading fails.
 type SchemaErrMsg struct {
-	Err error
+	Err     error
+	ConnGen uint64
 }
 
 // ExecuteQueryMsg requests query execution.
@@ -98,18 +100,21 @@ type ExecuteQueryMsg struct {
 // QueryStartedMsg is sent when a query begins executing.
 type QueryStartedMsg struct {
 	TabID int
+	RunID uint64
 }
 
 // QueryResultMsg is sent when query execution completes.
 type QueryResultMsg struct {
 	Result *adapter.QueryResult
 	TabID  int
+	RunID  uint64
 }
 
 // QueryErrMsg is sent when query execution fails.
 type QueryErrMsg struct {
 	Err   error
 	TabID int
+	RunID uint64
 }
 
 // QueryCancelledMsg is sent when a query is cancelled.
@@ -150,9 +155,6 @@ type StatusMsg struct {
 // ToggleKeyModeMsg switches between vim and standard keybindings.
 type ToggleKeyModeMsg struct{}
 
-// ToggleSidebarMsg shows/hides the sidebar.
-type ToggleSidebarMsg struct{}
-
 // ExportRequestMsg requests exporting results.
 type ExportRequestMsg struct {
 	Format string
@@ -177,9 +179,6 @@ type InsertTextMsg struct {
 
 // RefreshSchemaMsg triggers a schema refresh.
 type RefreshSchemaMsg struct{}
-
-// OpenConnManagerMsg opens the connection manager.
-type OpenConnManagerMsg struct{}
 
 // OpenHistoryMsg opens the query history panel.
 type OpenHistoryMsg struct{}

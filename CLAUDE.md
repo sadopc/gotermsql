@@ -26,7 +26,7 @@ GOTERMSQL_PG_DSN="postgres://user:pass@host/db" go test ./internal/adapter/postg
 ```
 Integration tests auto-skip if PostgreSQL is unavailable.
 
-Version info is injected via LDFLAGS from git tags/commit/date.
+Version info is injected via LDFLAGS from git tags/commit/date. Releases via `goreleaser` (targets: linux/darwin amd64+arm64, windows amd64). Homebrew tap at `sadopc/homebrew-tap`.
 
 ## Architecture
 
@@ -43,7 +43,7 @@ Bubble Tea (Elm Architecture) TUI. Root model in `internal/app/app.go`.
 
 **Layout system:** Tab bar (top) + status bar (bottom) + main area. Main area splits into sidebar (left, fixed width) + editor/results (right, percentage-based vertical split). Resizable via Ctrl+Arrow keys. Sidebar: 15–50% width. Editor height: 20–80%.
 
-**Border width accounting:** lipgloss `.Width(w)` sets *content* width; borders add 2 chars on top. All components must use `.Width(m.width - 2)` to fit within their allocated space (editor and results do this; sidebar was fixed to match).
+**Border width accounting:** lipgloss `.Width(w)` sets *content* width; borders add 2 chars on top. All components must use `.Width(m.width - 2)` to fit within their allocated space.
 
 ## Adapter Pattern
 
@@ -70,10 +70,26 @@ Two layers with different word-break rules:
 
 **Suppression:** Autocomplete dismisses after `;` to prevent suggestions on completed statements.
 
+## Results Table
+
+**Column sizing (`autoSizeColumns`):** Samples up to 100 rows to estimate content widths, caps at 50 chars per column, scales proportionally when total exceeds terminal width.
+
+**bubbles/table has zero gap between columns.** All spacing comes from the Cell style's `Padding(0, 1)` (1 char left + 1 right). The width calculation accounts for `numCols * 2` padding overhead. When modifying theme `ResultsCell`, always include `Padding(0, 1)` or columns will run together.
+
+## Status Bar
+
+**Auto-clear timer:** After query results, errors, or status messages appear, the status bar reverts to key hints (F5 Run, Ctrl+Q Quit, etc.) after 5 seconds via `ClearStatusMsg` + `tea.Tick`. The `ClearStatusMsg` is an exported type routed through `app.go`.
+
+**Command propagation:** When calling `m.statusbar.Update(msg)`, always capture and append the returned `tea.Cmd` — the statusbar returns timer commands that must reach the Bubble Tea runtime.
+
+## Theme System
+
+Three themes in `internal/theme/theme.go`: `"default"` (dark), `"light"`, `"monokai"`. `theme.Current` is a global pointer used by all components. When adding styles to themes, add to all three variants.
+
 ## Key Patterns & Gotchas
 
 - **Query execution is async:** `tea.Batch()` sends `QueryStartedMsg` immediately, then `QueryResultMsg` when the goroutine completes. 5-minute context timeout on all queries.
-- **Ctrl+Enter not portable:** Most terminals (macOS Terminal.app, etc.) cannot distinguish Ctrl+Enter from Enter. Use F5 or Ctrl+G as reliable alternatives for executing queries.
+- **Ctrl+Enter not portable:** Most terminals cannot distinguish Ctrl+Enter from Enter. Use F5 or Ctrl+G as reliable alternatives.
 - **Editor Focus():** Must be called explicitly after creating a new editor — `textarea` defaults to blurred state and silently drops all input when blurred.
 - **Editor InsertText():** Appends at end, not at cursor position (textarea library limitation). `ReplaceWord()` handles autocomplete replacement.
 - **Syntax highlighting:** Chroma tokenization runs on every `View()` call in blurred mode. No caching.

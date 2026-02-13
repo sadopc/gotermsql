@@ -5,31 +5,31 @@ import "github.com/charmbracelet/bubbles/key"
 // KeyMap defines all application keybindings.
 type KeyMap struct {
 	// Navigation
-	FocusNext     key.Binding
-	FocusPrev     key.Binding
-	FocusSidebar  key.Binding
-	FocusEditor   key.Binding
-	FocusResults  key.Binding
+	FocusNext    key.Binding
+	FocusPrev    key.Binding
+	FocusSidebar key.Binding
+	FocusEditor  key.Binding
+	FocusResults key.Binding
 
 	// Tabs
-	NewTab    key.Binding
-	CloseTab  key.Binding
-	NextTab   key.Binding
-	PrevTab   key.Binding
+	NewTab   key.Binding
+	CloseTab key.Binding
+	NextTab  key.Binding
+	PrevTab  key.Binding
 
 	// Editor
 	ExecuteQuery key.Binding
 	CancelQuery  key.Binding
 
 	// App
-	Quit           key.Binding
-	Help           key.Binding
-	ToggleKeyMode  key.Binding
-	ToggleSidebar  key.Binding
-	RefreshSchema  key.Binding
-	OpenConnMgr    key.Binding
-	OpenHistory    key.Binding
-	Export         key.Binding
+	Quit          key.Binding
+	Help          key.Binding
+	ToggleKeyMode key.Binding
+	ToggleSidebar key.Binding
+	RefreshSchema key.Binding
+	OpenConnMgr   key.Binding
+	OpenHistory   key.Binding
+	Export        key.Binding
 
 	// Pane resizing
 	ResizeLeft  key.Binding
@@ -38,18 +38,18 @@ type KeyMap struct {
 	ResizeDown  key.Binding
 
 	// Vim normal mode
-	VimUp      key.Binding
-	VimDown    key.Binding
-	VimLeft    key.Binding
-	VimRight   key.Binding
-	VimInsert  key.Binding
-	VimAppend  key.Binding
-	VimEscape  key.Binding
-	VimTop     key.Binding
-	VimBottom  key.Binding
-	VimSearch  key.Binding
-	VimVisual  key.Binding
-	VimYank    key.Binding
+	VimUp     key.Binding
+	VimDown   key.Binding
+	VimLeft   key.Binding
+	VimRight  key.Binding
+	VimInsert key.Binding
+	VimAppend key.Binding
+	VimEscape key.Binding
+	VimTop    key.Binding
+	VimBottom key.Binding
+	VimSearch key.Binding
+	VimVisual key.Binding
+	VimYank   key.Binding
 }
 
 // StandardKeyMap returns keybindings for standard mode.

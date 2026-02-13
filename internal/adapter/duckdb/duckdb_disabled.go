@@ -18,8 +18,8 @@ func init() {
 
 type disabledAdapter struct{}
 
-func (d *disabledAdapter) Name() string        { return "duckdb" }
-func (d *disabledAdapter) DefaultPort() int     { return 0 }
+func (d *disabledAdapter) Name() string     { return "duckdb" }
+func (d *disabledAdapter) DefaultPort() int { return 0 }
 
 func (d *disabledAdapter) Connect(_ context.Context, _ string) (adapter.Connection, error) {
 	return nil, errDisabled
@@ -51,11 +51,11 @@ func (c *disabledConnection) Execute(_ context.Context, _ string) (*adapter.Quer
 func (c *disabledConnection) ExecuteStreaming(_ context.Context, _ string, _ int) (adapter.RowIterator, error) {
 	return nil, errDisabled
 }
-func (c *disabledConnection) Cancel() error                                    { return errDisabled }
+func (c *disabledConnection) Cancel() error { return errDisabled }
 func (c *disabledConnection) Completions(_ context.Context) ([]adapter.CompletionItem, error) {
 	return nil, errDisabled
 }
-func (c *disabledConnection) Ping(_ context.Context) error  { return errDisabled }
-func (c *disabledConnection) Close() error                  { return errDisabled }
-func (c *disabledConnection) DatabaseName() string           { return "" }
-func (c *disabledConnection) AdapterName() string            { return "duckdb" }
+func (c *disabledConnection) Ping(_ context.Context) error { return errDisabled }
+func (c *disabledConnection) Close() error                 { return errDisabled }
+func (c *disabledConnection) DatabaseName() string         { return "" }
+func (c *disabledConnection) AdapterName() string          { return "duckdb" }

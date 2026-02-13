@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 
@@ -122,8 +123,12 @@ Examples:
 				return fmt.Errorf("error running application: %w", err)
 			}
 
-			// Save config with any updated connections
-			_ = finalModel
+			// Close database connection if open
+			if m, ok := finalModel.(app.Model); ok {
+				if conn := m.Connection(); conn != nil {
+					conn.Close()
+				}
+			}
 			if hist != nil {
 				hist.Close()
 			}
@@ -187,22 +192,24 @@ func detectAdapter(dsn string) string {
 func buildDSN(adapterName, host string, port int, user, password, database, file string) string {
 	switch adapterName {
 	case "postgres":
-		dsn := "postgres://"
-		if user != "" {
-			dsn += user
-			if password != "" {
-				dsn += ":" + password
-			}
-			dsn += "@"
+		u := &url.URL{
+			Scheme: "postgres",
+			Host:   host,
 		}
-		dsn += host
+		if user != "" {
+			if password != "" {
+				u.User = url.UserPassword(user, password)
+			} else {
+				u.User = url.User(user)
+			}
+		}
 		if port > 0 {
-			dsn += fmt.Sprintf(":%d", port)
+			u.Host = fmt.Sprintf("%s:%d", host, port)
 		}
 		if database != "" {
-			dsn += "/" + database
+			u.Path = "/" + database
 		}
-		return dsn
+		return u.String()
 
 	case "mysql":
 		// go-sql-driver format: user:pass@tcp(host:port)/db
@@ -210,7 +217,7 @@ func buildDSN(adapterName, host string, port int, user, password, database, file
 		if user != "" {
 			dsn += user
 			if password != "" {
-				dsn += ":" + password
+				dsn += ":" + url.PathEscape(password)
 			}
 			dsn += "@"
 		}
