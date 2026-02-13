@@ -163,6 +163,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(cmds...)
 		}
 
+		// Help overlay consumes all keys except toggle/close
+		if m.showHelp {
+			if msg.String() == "f1" || msg.String() == "?" || msg.String() == "esc" || msg.String() == "q" {
+				m.showHelp = false
+			}
+			return m, nil
+		}
+
 		// Autocomplete takes priority when visible
 		if m.autocomp.Visible() {
 			switch msg.String() {
@@ -341,6 +349,10 @@ func (m *Model) handleGlobalKeys(msg tea.KeyMsg) tea.Cmd {
 		return tea.Quit
 
 	case msg.String() == "f1":
+		m.showHelp = !m.showHelp
+		return nil
+
+	case msg.String() == "?" && m.focusedPane != PaneEditor:
 		m.showHelp = !m.showHelp
 		return nil
 
@@ -562,12 +574,10 @@ func (m Model) View() string {
 	// Assemble full view
 	view := lipgloss.JoinVertical(lipgloss.Left, tabBar, content, statusBar)
 
-	// Help overlay
+	// Help overlay — full-screen centered
 	if m.showHelp {
-		helpView := m.help.View(m.keyMap)
-		helpBox := th.DialogBorder.Render(helpView)
-		// Simple overlay at bottom
-		view = view + "\n" + helpBox
+		helpContent := m.renderHelpScreen(th)
+		view = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, helpContent)
 	}
 
 	// Connection manager overlay
@@ -677,6 +687,99 @@ func (m *Model) connect(adapterName, dsn string) tea.Cmd {
 		}
 		return ConnectMsg{Conn: conn, Adapter: adapterName, DSN: dsn}
 	}
+}
+
+func (m *Model) renderHelpScreen(th *theme.Theme) string {
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("#569CD6")).
+		MarginBottom(1)
+
+	sectionStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("#DCDCAA")).
+		MarginTop(1)
+
+	keyStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("#CE9178"))
+
+	descStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#D4D4D4"))
+
+	mutedStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#6A9955"))
+
+	line := func(key, desc string) string {
+		return fmt.Sprintf("  %s  %s", keyStyle.Render(fmt.Sprintf("%-16s", key)), descStyle.Render(desc))
+	}
+
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("  gotermsql - Keyboard Shortcuts"))
+	b.WriteString("\n")
+
+	b.WriteString(sectionStyle.Render("  Query"))
+	b.WriteString("\n")
+	b.WriteString(line("F5 / Ctrl+G", "Execute query"))
+	b.WriteString("\n")
+	b.WriteString(line("Ctrl+C", "Cancel running query"))
+	b.WriteString("\n")
+	b.WriteString(line("Ctrl+Space", "Trigger autocomplete"))
+	b.WriteString("\n")
+	b.WriteString(line("Ctrl+E", "Export results"))
+	b.WriteString("\n")
+
+	b.WriteString(sectionStyle.Render("  Navigation"))
+	b.WriteString("\n")
+	b.WriteString(line("Tab", "Next pane"))
+	b.WriteString("\n")
+	b.WriteString(line("Shift+Tab", "Previous pane"))
+	b.WriteString("\n")
+	b.WriteString(line("Alt+1 / 2 / 3", "Jump to sidebar / editor / results"))
+	b.WriteString("\n")
+
+	b.WriteString(sectionStyle.Render("  Tabs"))
+	b.WriteString("\n")
+	b.WriteString(line("Ctrl+T", "New tab"))
+	b.WriteString("\n")
+	b.WriteString(line("Ctrl+W", "Close tab"))
+	b.WriteString("\n")
+	b.WriteString(line("Ctrl+] / Ctrl+[", "Next / previous tab"))
+	b.WriteString("\n")
+
+	b.WriteString(sectionStyle.Render("  Application"))
+	b.WriteString("\n")
+	b.WriteString(line("Ctrl+O", "Connection manager"))
+	b.WriteString("\n")
+	b.WriteString(line("Ctrl+B", "Toggle sidebar"))
+	b.WriteString("\n")
+	b.WriteString(line("Ctrl+R", "Refresh schema"))
+	b.WriteString("\n")
+	b.WriteString(line("Ctrl+H", "Query history"))
+	b.WriteString("\n")
+	b.WriteString(line("F2", "Toggle vim / standard mode"))
+	b.WriteString("\n")
+	b.WriteString(line("Ctrl+Q", "Quit"))
+	b.WriteString("\n")
+
+	b.WriteString(sectionStyle.Render("  Resize Panes"))
+	b.WriteString("\n")
+	b.WriteString(line("Ctrl+Arrow keys", "Resize sidebar / editor split"))
+	b.WriteString("\n")
+
+	b.WriteString(sectionStyle.Render("  Sidebar"))
+	b.WriteString("\n")
+	b.WriteString(line("Enter / Right", "Expand node / open table"))
+	b.WriteString("\n")
+	b.WriteString(line("Left", "Collapse node"))
+	b.WriteString("\n")
+	b.WriteString(line("Up / Down", "Navigate"))
+	b.WriteString("\n")
+
+	b.WriteString("\n")
+	b.WriteString(mutedStyle.Render("  Press ? / F1 / Esc to close"))
+
+	return th.DialogBorder.Render(b.String())
 }
 
 func (m *Model) loadSchema() tea.Cmd {
