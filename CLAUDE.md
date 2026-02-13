@@ -60,6 +60,8 @@ Query execution and schema loading are async (goroutines returning `tea.Cmd`). T
 
 **`Model.executingTabID int`** — tracks which tab has the in-flight query. When a tab is closed while executing (`CloseTabMsg`), the query is cancelled and `m.executing` is cleared. When `QueryResultMsg`/`QueryErrMsg` arrives for a closed tab (`ts == nil`), `m.executing` is still cleared if `msg.TabID == m.executingTabID`.
 
+**`QueryStreamingMsg`** also carries `ConnGen` and `RunID`. Its handler must close the iterator on stale/mismatched messages to avoid resource leaks.
+
 **When adding new async messages:** Always capture the relevant generation counter at dispatch time and check it in the handler. The closure in `tea.Cmd` functions must capture the counter value, not a pointer to the model.
 
 ## Connection Lifecycle
@@ -67,7 +69,7 @@ Query execution and schema loading are async (goroutines returning `tea.Cmd`). T
 - **Connect:** `connect()` returns a `tea.Cmd` that opens connection + pings. On success, sends `ConnectMsg`.
 - **Reconnect:** `ConnectMsg` handler closes old `m.conn`, cancels in-flight schema load (`m.schemaCancel()`), assigns new connection, increments `connGen`.
 - **Shutdown:** `main.go` calls `m.Connection()` on the final model and closes it. History DB is closed via `defer hist.Close()` (panic-safe).
-- **Query cancellation:** `executeQuery()` creates a context with 5-minute timeout and stores cancel in `m.cancelFunc`. Ctrl+C calls both `m.cancelFunc()` (cancels context) and `m.conn.Cancel()` (database-level cancellation).
+- **Query cancellation:** `executeQuery()` creates a cancellable context and stores cancel in `m.cancelFunc`. For streaming SELECTs, the context has no timeout (iterator may be browsed for hours); for non-streaming queries, a 5-minute timeout is applied. Ctrl+C calls both `m.cancelFunc()` (cancels context) and `m.conn.Cancel()` (database-level cancellation).
 - **Schema loading:** `loadSchema()` uses `context.WithTimeout(30s)`. Cancel func stored in `m.schemaCancel`; previous load cancelled on reconnect or quit.
 
 ## Adapter Pattern
@@ -107,7 +109,9 @@ Two layers with different word-break rules:
 
 **Pagination routing:** `FetchedPageMsg` (exported) carries `TabID`. The `fetchNextPage()`/`fetchPrevPage()` functions embed the tab's ID. The app routes `FetchedPageMsg` to the correct tab's `Results.Update(msg)` in its main Update switch.
 
-**Row cap:** `executeQuery()` truncates SELECT results exceeding 10,000 rows and sets `Truncated: true` on `QueryResultMsg`. The handler shows a warning in the status bar.
+**Streaming SELECT queries:** `executeQuery()` uses `adapter.IsSelectQuery()` to detect row-returning statements (SELECT, WITH, EXPLAIN, SHOW, DESCRIBE, PRAGMA, etc.). For these, it calls `conn.ExecuteStreaming()` first, returning a `QueryStreamingMsg` with a `RowIterator`. If streaming fails, it falls back to `conn.Execute()`. Non-SELECT statements always use `Execute()`. The `QueryStreamingMsg` handler wires the iterator into `results.Model` via `SetIterator()` + `FetchFirstPage()`.
+
+**Sliding window buffer:** `maxBufferedRows = 5000` in `results.go`. When streaming pages push past this limit, the oldest rows are trimmed from the front. This keeps memory constant regardless of result set size (verified: 2 MB overhead for 10M rows).
 
 **Export (`internal/ui/results/exporter.go`):** Four functions — `ExportCSV`/`ExportJSON` for in-memory rows, `ExportCSVFromIterator`/`ExportJSONFromIterator` for streaming large result sets. Ctrl+E triggers in-memory CSV export to `export_<timestamp>.csv` in the working directory.
 
@@ -133,7 +137,7 @@ Three themes in `internal/theme/theme.go`: `"default"` (dark), `"light"`, `"mono
 
 ## Key Patterns & Gotchas
 
-- **Query execution is async:** `tea.Batch()` sends `QueryStartedMsg` immediately, then `QueryResultMsg` when the goroutine completes. 5-minute context timeout on all queries.
+- **Query execution is async:** `tea.Batch()` sends `QueryStartedMsg` immediately, then `QueryResultMsg` or `QueryStreamingMsg` when the goroutine completes. Streaming SELECTs have no timeout; non-streaming queries have a 5-minute timeout.
 - **Nil guards on async handlers:** Always check both `ts != nil` (tab may be closed) and `m.conn != nil` (may be disconnected) before accessing tab state or connection in async message handlers. When `ts == nil`, still clear `m.executing` if `msg.TabID == m.executingTabID`.
 - **Error sanitization:** `sanitizeError()` strips credentials from DSN URLs in error messages (e.g., `postgres://user:pass@` → `postgres://***@`). Applied in `ConnectErrMsg` handler and connmgr test result display. Defined separately in both `internal/app/` and `internal/ui/connmgr/` packages.
 - **Ctrl+Enter not portable:** Most terminals cannot distinguish Ctrl+Enter from Enter. Use F5 or Ctrl+G as reliable alternatives.
