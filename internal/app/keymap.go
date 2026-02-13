@@ -28,6 +28,7 @@ type KeyMap struct {
 	ToggleSidebar key.Binding
 	RefreshSchema key.Binding
 	OpenConnMgr   key.Binding
+	History       key.Binding
 	Export        key.Binding
 
 	// Pane resizing
@@ -122,6 +123,10 @@ func StandardKeyMap() KeyMap {
 			key.WithKeys("ctrl+o"),
 			key.WithHelp("ctrl+o", "connections"),
 		),
+		History: key.NewBinding(
+			key.WithKeys("ctrl+h"),
+			key.WithHelp("ctrl+h", "history"),
+		),
 		Export: key.NewBinding(
 			key.WithKeys("ctrl+e"),
 			key.WithHelp("ctrl+e", "export"),
@@ -214,7 +219,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		{k.ExecuteQuery, k.CancelQuery, k.Export},
 		{k.FocusNext, k.FocusPrev, k.FocusSidebar, k.FocusEditor, k.FocusResults},
 		{k.NewTab, k.CloseTab, k.NextTab, k.PrevTab},
-		{k.ToggleKeyMode, k.ToggleSidebar, k.RefreshSchema, k.OpenConnMgr},
+		{k.ToggleKeyMode, k.ToggleSidebar, k.RefreshSchema, k.OpenConnMgr, k.History},
 		{k.ResizeLeft, k.ResizeRight, k.ResizeUp, k.ResizeDown},
 		{k.Quit, k.Help},
 	}

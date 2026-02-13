@@ -23,6 +23,7 @@ import (
 	"github.com/sadopc/gotermsql/internal/ui/autocomplete"
 	"github.com/sadopc/gotermsql/internal/ui/connmgr"
 	"github.com/sadopc/gotermsql/internal/ui/editor"
+	"github.com/sadopc/gotermsql/internal/ui/historybrowser"
 	"github.com/sadopc/gotermsql/internal/ui/results"
 	"github.com/sadopc/gotermsql/internal/ui/sidebar"
 	"github.com/sadopc/gotermsql/internal/ui/statusbar"
@@ -53,8 +54,9 @@ type Model struct {
 	sidebar   sidebar.Model
 	tabs      tabs.Model
 	statusbar statusbar.Model
-	connMgr   connmgr.Model
-	autocomp  autocomplete.Model
+	connMgr     connmgr.Model
+	histBrowser historybrowser.Model
+	autocomp    autocomplete.Model
 
 	// Per-tab state
 	tabStates map[int]*TabState
@@ -115,8 +117,9 @@ func New(cfg *config.Config, hist *history.History, auditLog *audit.Logger) Mode
 		sidebar:   sidebar.New(),
 		tabs:      tabs.New(),
 		statusbar: statusbar.New(),
-		connMgr:   connmgr.New(cfg.Connections),
-		autocomp:  autocomplete.New(compEngine),
+		connMgr:     connmgr.New(cfg.Connections),
+		histBrowser: historybrowser.New(hist),
+		autocomp:    autocomplete.New(compEngine),
 
 		tabStates:  make(map[int]*TabState),
 		compEngine: compEngine,
@@ -160,6 +163,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.connMgr.Visible() {
 			var cmd tea.Cmd
 			m.connMgr, cmd = m.connMgr.Update(msg)
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+			return m, tea.Batch(cmds...)
+		}
+
+		// History browser takes priority when visible
+		if m.histBrowser.Visible() {
+			var cmd tea.Cmd
+			m.histBrowser, cmd = m.histBrowser.Update(msg)
 			if cmd != nil {
 				cmds = append(cmds, cmd)
 			}
@@ -462,6 +475,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			ts.Editor.ReplaceWord(msg.Text, msg.PrefixLen)
 		}
 
+	case historybrowser.SelectQueryMsg:
+		ts := m.activeTabState()
+		if ts != nil {
+			ts.Editor.SetValue(msg.Query)
+		}
+
 	case connmgr.ConnectRequestMsg:
 		cmds = append(cmds, m.connect(msg.AdapterName, msg.DSN))
 
@@ -556,6 +575,14 @@ func (m *Model) handleGlobalKeys(msg tea.KeyMsg) tea.Cmd {
 
 	case msg.String() == "ctrl+o":
 		m.connMgr.Show()
+		return nil
+
+	case msg.String() == "ctrl+h":
+		if m.histBrowser.Visible() {
+			m.histBrowser.Hide()
+		} else {
+			m.histBrowser.Show()
+		}
 		return nil
 
 	case msg.String() == "ctrl+t":
@@ -763,6 +790,13 @@ func (m Model) View() string {
 		view = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, helpContent)
 	}
 
+	// History browser overlay
+	if m.histBrowser.Visible() {
+		histView := m.histBrowser.View()
+		centered := lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, histView)
+		return clampViewHeight(centered, m.height)
+	}
+
 	// Connection manager overlay
 	if m.connMgr.Visible() {
 		connView := m.connMgr.View()
@@ -812,6 +846,9 @@ func (m *Model) updateLayout() {
 
 	// Connection manager
 	m.connMgr.SetSize(m.width, m.height)
+
+	// History browser
+	m.histBrowser.SetSize(m.width, m.height)
 
 	// Resize components
 	mainHeight := m.height - 3 // tab bar + status bar estimate

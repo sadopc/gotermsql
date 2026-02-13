@@ -439,9 +439,9 @@ func TestFullHelp_ContainsAllGroups(t *testing.T) {
 	if len(full[2]) != 4 {
 		t.Errorf("FullHelp group 2 (tabs) length = %d, want 4", len(full[2]))
 	}
-	// Group 3: App (ToggleKeyMode, ToggleSidebar, RefreshSchema, OpenConnMgr)
-	if len(full[3]) != 4 {
-		t.Errorf("FullHelp group 3 (app) length = %d, want 4", len(full[3]))
+	// Group 3: App (ToggleKeyMode, ToggleSidebar, RefreshSchema, OpenConnMgr, History)
+	if len(full[3]) != 5 {
+		t.Errorf("FullHelp group 3 (app) length = %d, want 5", len(full[3]))
 	}
 	// Group 4: Resize (ResizeLeft, ResizeRight, ResizeUp, ResizeDown)
 	if len(full[4]) != 4 {
