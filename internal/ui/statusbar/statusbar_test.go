@@ -392,3 +392,40 @@ func TestInit(t *testing.T) {
 		t.Fatal("expected nil cmd from Init")
 	}
 }
+
+func TestUpdate_ClearStatusMsg_StaleIgnored(t *testing.T) {
+	m := New()
+
+	m, cmd1 := m.Update(appmsg.StatusMsg{Text: "first"})
+	if cmd1 == nil {
+		t.Fatal("expected clear timer command for first status")
+	}
+	msg1 := cmd1()
+	clear1, ok := msg1.(ClearStatusMsg)
+	if !ok {
+		t.Fatalf("expected ClearStatusMsg from first timer, got %T", msg1)
+	}
+
+	m, cmd2 := m.Update(appmsg.StatusMsg{Text: "second"})
+	if cmd2 == nil {
+		t.Fatal("expected clear timer command for second status")
+	}
+	msg2 := cmd2()
+	clear2, ok := msg2.(ClearStatusMsg)
+	if !ok {
+		t.Fatalf("expected ClearStatusMsg from second timer, got %T", msg2)
+	}
+	if clear1.Gen == clear2.Gen {
+		t.Fatalf("expected different generations, got %d and %d", clear1.Gen, clear2.Gen)
+	}
+
+	m, _ = m.Update(clear1)
+	if m.message != "second" {
+		t.Fatalf("stale timer cleared newer message: got %q, want %q", m.message, "second")
+	}
+
+	m, _ = m.Update(clear2)
+	if m.message != "" {
+		t.Fatalf("fresh timer should clear message, got %q", m.message)
+	}
+}

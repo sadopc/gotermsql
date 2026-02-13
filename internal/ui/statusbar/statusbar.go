@@ -11,7 +11,9 @@ import (
 )
 
 // ClearStatusMsg is sent after a timeout to revert the status bar to key hints.
-type ClearStatusMsg struct{}
+type ClearStatusMsg struct {
+	Gen uint64
+}
 
 // Model is the status bar component.
 type Model struct {
@@ -25,6 +27,7 @@ type Model struct {
 	vimState     appmsg.VimState
 	message      string
 	isError      bool
+	clearGen     uint64
 	cursorLine   int
 	cursorCol    int
 	connected    bool
@@ -46,8 +49,10 @@ func (m Model) Init() tea.Cmd {
 // Update handles status bar messages.
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	clearAfter := func() tea.Cmd {
+		m.clearGen++
+		gen := m.clearGen
 		return tea.Tick(5*time.Second, func(time.Time) tea.Msg {
-			return ClearStatusMsg{}
+			return ClearStatusMsg{Gen: gen}
 		})
 	}
 
@@ -102,6 +107,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		return m, clearAfter()
 
 	case ClearStatusMsg:
+		if msg.Gen != m.clearGen {
+			break // stale timer, ignore
+		}
 		m.queryTime = 0
 		m.rowCount = -1
 		m.message = ""

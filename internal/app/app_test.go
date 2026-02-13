@@ -1,11 +1,15 @@
 package app
 
 import (
+	"context"
+	"io"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/sadopc/gotermsql/internal/adapter"
 	"github.com/sadopc/gotermsql/internal/config"
+	"github.com/sadopc/gotermsql/internal/schema"
 )
 
 // ---------------------------------------------------------------------------
@@ -291,6 +295,142 @@ func TestView_Quitting(t *testing.T) {
 	view := m.View()
 	if view != "Goodbye!\n" {
 		t.Errorf("View() when quitting = %q, want %q", view, "Goodbye!\n")
+	}
+}
+
+func TestUpdate_SwitchTabMsg_BlursInactiveTabs(t *testing.T) {
+	cfg := config.DefaultConfig()
+	m := New(cfg, nil, nil)
+
+	// Create a second tab.
+	model, cmd := m.Update(NewTabMsg{})
+	m = model.(Model)
+	if cmd != nil {
+		model, _ = m.Update(cmd())
+		m = model.(Model)
+	}
+
+	// Switch to tab 0 and ensure its editor is focused.
+	model, _ = m.Update(SwitchTabMsg{TabID: 0})
+	m = model.(Model)
+	if ts := m.tabStates[0]; ts == nil || !ts.Editor.Focused() {
+		t.Fatal("expected tab 0 editor focused before switching")
+	}
+
+	// Simulate Ctrl+] path where tab model advances active tab before message delivery.
+	nextCmd := m.tabs.NextTab()
+	if nextCmd == nil {
+		t.Fatal("expected NextTab command")
+	}
+	model, _ = m.Update(nextCmd())
+	m = model.(Model)
+
+	if m.tabs.ActiveID() != 1 {
+		t.Fatalf("expected active tab ID 1, got %d", m.tabs.ActiveID())
+	}
+	if ts := m.tabStates[1]; ts == nil || !ts.Editor.Focused() {
+		t.Fatal("expected tab 1 editor focused after switch")
+	}
+	if ts := m.tabStates[0]; ts != nil && ts.Editor.Focused() {
+		t.Fatal("expected inactive tab 0 editor blurred after switch")
+	}
+}
+
+type testConn struct {
+	dbName      string
+	cancelCalls int
+	closed      bool
+}
+
+func (c *testConn) Databases(context.Context) ([]schema.Database, error) {
+	return nil, nil
+}
+func (c *testConn) Tables(context.Context, string, string) ([]schema.Table, error) {
+	return nil, nil
+}
+func (c *testConn) Columns(context.Context, string, string, string) ([]schema.Column, error) {
+	return nil, nil
+}
+func (c *testConn) Indexes(context.Context, string, string, string) ([]schema.Index, error) {
+	return nil, nil
+}
+func (c *testConn) ForeignKeys(context.Context, string, string, string) ([]schema.ForeignKey, error) {
+	return nil, nil
+}
+func (c *testConn) Execute(context.Context, string) (*adapter.QueryResult, error) {
+	return nil, nil
+}
+func (c *testConn) Cancel() error {
+	c.cancelCalls++
+	return nil
+}
+func (c *testConn) ExecuteStreaming(context.Context, string, int) (adapter.RowIterator, error) {
+	return nil, nil
+}
+func (c *testConn) Completions(context.Context) ([]adapter.CompletionItem, error) {
+	return nil, nil
+}
+func (c *testConn) Ping(context.Context) error { return nil }
+func (c *testConn) Close() error {
+	c.closed = true
+	return nil
+}
+func (c *testConn) DatabaseName() string { return c.dbName }
+func (c *testConn) AdapterName() string  { return "test" }
+
+type testIter struct {
+	closed bool
+}
+
+func (it *testIter) FetchNext(context.Context) ([][]string, error) { return nil, io.EOF }
+func (it *testIter) FetchPrev(context.Context) ([][]string, error) { return nil, io.EOF }
+func (it *testIter) Columns() []adapter.ColumnMeta                 { return []adapter.ColumnMeta{{Name: "col"}} }
+func (it *testIter) TotalRows() int64                              { return -1 }
+func (it *testIter) Close() error {
+	it.closed = true
+	return nil
+}
+
+func TestUpdate_ConnectMsg_CleansPreviousConnectionState(t *testing.T) {
+	cfg := config.DefaultConfig()
+	m := New(cfg, nil, nil)
+
+	oldConn := &testConn{dbName: "old"}
+	newConn := &testConn{dbName: "new"}
+	m.conn = oldConn
+	m.executing = true
+
+	cancelCalled := false
+	m.cancelFunc = func() { cancelCalled = true }
+
+	iter := &testIter{}
+	ts := m.tabStates[0]
+	ts.Results.SetIterator(iter)
+
+	model, _ := m.Update(ConnectMsg{
+		Conn:    newConn,
+		Adapter: "test",
+		DSN:     "test://new",
+	})
+	m = model.(Model)
+
+	if !cancelCalled {
+		t.Fatal("expected previous query context to be cancelled on reconnect")
+	}
+	if oldConn.cancelCalls != 1 {
+		t.Fatalf("expected old connection cancel to be called once, got %d", oldConn.cancelCalls)
+	}
+	if !oldConn.closed {
+		t.Fatal("expected old connection to be closed on reconnect")
+	}
+	if !iter.closed {
+		t.Fatal("expected existing iterator to be closed on reconnect")
+	}
+	if m.conn != newConn {
+		t.Fatal("expected new connection to be installed")
+	}
+	if m.executing {
+		t.Fatal("expected executing=false after reconnect")
 	}
 }
 

@@ -51,9 +51,9 @@ type Model struct {
 	focusedPane Pane
 
 	// Components
-	sidebar   sidebar.Model
-	tabs      tabs.Model
-	statusbar statusbar.Model
+	sidebar     sidebar.Model
+	tabs        tabs.Model
+	statusbar   statusbar.Model
 	connMgr     connmgr.Model
 	histBrowser historybrowser.Model
 	autocomp    autocomplete.Model
@@ -114,9 +114,9 @@ func New(cfg *config.Config, hist *history.History, auditLog *audit.Logger) Mode
 		showSidebar:  true,
 		focusedPane:  PaneEditor,
 
-		sidebar:   sidebar.New(),
-		tabs:      tabs.New(),
-		statusbar: statusbar.New(),
+		sidebar:     sidebar.New(),
+		tabs:        tabs.New(),
+		statusbar:   statusbar.New(),
 		connMgr:     connmgr.New(cfg.Connections),
 		histBrowser: historybrowser.New(hist),
 		autocomp:    autocomplete.New(compEngine),
@@ -214,6 +214,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case ConnectMsg:
+		// Cancel any query context from the previous connection.
+		if m.cancelFunc != nil {
+			m.cancelFunc()
+			m.cancelFunc = nil
+		}
+		// Best-effort server-side cancellation if a query is currently running.
+		if m.executing && m.conn != nil {
+			m.conn.Cancel()
+		}
+		m.executing = false
+		m.executingTabID = 0
+		// Close all tab iterators (they may hold their own DB connections)
+		for _, ts := range m.tabStates {
+			ts.Results.CloseIterator()
+		}
 		if m.conn != nil {
 			_ = m.conn.Close()
 		}
@@ -452,8 +467,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 
 	case SwitchTabMsg:
+		// Tabs can already be switched by the tab model before this message arrives,
+		// so blur all per-tab panes first, then re-focus the active one.
+		for _, ts := range m.tabStates {
+			ts.Editor.Blur()
+			ts.Results.Blur()
+		}
 		m.tabs, _ = m.tabs.Update(msg)
 		m.updateLayout()
+		m.setFocus(m.focusedPane)
 
 	case ToggleKeyModeMsg:
 		if m.keyMode == KeyModeStandard {
@@ -527,6 +549,18 @@ func (m *Model) handleGlobalKeys(msg tea.KeyMsg) tea.Cmd {
 	switch {
 	case msg.String() == "ctrl+q":
 		m.quitting = true
+		if m.cancelFunc != nil {
+			m.cancelFunc()
+			m.cancelFunc = nil
+		}
+		if m.executing && m.conn != nil {
+			m.conn.Cancel()
+		}
+		m.executing = false
+		m.executingTabID = 0
+		for _, ts := range m.tabStates {
+			ts.Results.CloseIterator()
+		}
 		if m.schemaCancel != nil {
 			m.schemaCancel()
 		}

@@ -414,6 +414,7 @@ func TestFormToConnection(t *testing.T) {
 	m.inputs[fieldUser].SetValue("admin")
 	m.inputs[fieldPassword].SetValue("secret")
 	m.inputs[fieldDatabase].SetValue("mydb")
+	m.inputs[fieldFile].SetValue("/tmp/test.db")
 	m.inputs[fieldDSN].SetValue("postgres://admin:secret@localhost:5432/mydb")
 
 	conn := m.formToConnection()
@@ -425,6 +426,9 @@ func TestFormToConnection(t *testing.T) {
 	}
 	if conn.Database != "mydb" {
 		t.Fatalf("expected database 'mydb', got %q", conn.Database)
+	}
+	if conn.File != "/tmp/test.db" {
+		t.Fatalf("expected file '/tmp/test.db', got %q", conn.File)
 	}
 }
 
@@ -524,6 +528,7 @@ func TestLoadIntoForm(t *testing.T) {
 		User:     "admin",
 		Password: "secret",
 		Database: "production",
+		File:     "/tmp/production.db",
 		DSN:      "mysql://admin:secret@db.example.com:3306/production",
 	}
 
@@ -540,6 +545,9 @@ func TestLoadIntoForm(t *testing.T) {
 	}
 	if m.inputs[fieldPort].Value() != "3306" {
 		t.Fatalf("expected port '3306', got %q", m.inputs[fieldPort].Value())
+	}
+	if m.inputs[fieldFile].Value() != "/tmp/production.db" {
+		t.Fatalf("expected file '/tmp/production.db', got %q", m.inputs[fieldFile].Value())
 	}
 }
 

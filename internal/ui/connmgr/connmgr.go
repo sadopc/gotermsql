@@ -60,6 +60,7 @@ const (
 	fieldUser
 	fieldPassword
 	fieldDatabase
+	fieldFile
 	fieldDSN
 	fieldCount
 )
@@ -77,7 +78,7 @@ func New(connections []config.SavedConnection) Model {
 func (m *Model) initForm() {
 	m.inputs = make([]textinput.Model, fieldCount)
 
-	labels := []string{"Name", "Adapter", "Host", "Port", "User", "Password", "Database", "DSN"}
+	labels := []string{"Name", "Adapter", "Host", "Port", "User", "Password", "Database", "File", "DSN"}
 	placeholders := []string{
 		"my-database",
 		"postgres|mysql|sqlite|duckdb",
@@ -86,6 +87,7 @@ func (m *Model) initForm() {
 		"",
 		"",
 		"",
+		"/path/to/database.db",
 		"postgres://user:pass@host:5432/db",
 	}
 
@@ -376,6 +378,7 @@ func (m *Model) loadIntoForm(conn config.SavedConnection) {
 	m.inputs[fieldUser].SetValue(conn.User)
 	m.inputs[fieldPassword].SetValue(conn.Password)
 	m.inputs[fieldDatabase].SetValue(conn.Database)
+	m.inputs[fieldFile].SetValue(conn.File)
 	m.inputs[fieldDSN].SetValue(conn.DSN)
 	m.formFocus = 0
 	m.message = ""
@@ -392,6 +395,7 @@ func (m Model) formToConnection() config.SavedConnection {
 		User:     m.inputs[fieldUser].Value(),
 		Password: m.inputs[fieldPassword].Value(),
 		Database: m.inputs[fieldDatabase].Value(),
+		File:     m.inputs[fieldFile].Value(),
 		DSN:      m.inputs[fieldDSN].Value(),
 	}
 }
