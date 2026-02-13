@@ -20,11 +20,21 @@ A full-featured terminal SQL IDE written in Go. Single binary, zero config, mult
 
 ## Install
 
+### Homebrew (macOS/Linux)
+
+```bash
+brew install sadopc/tap/gotermsql
+```
+
 ### From source
 
 ```bash
 go install github.com/sadopc/gotermsql/cmd/gotermsql@latest
 ```
+
+### Pre-built binaries
+
+Download from [GitHub Releases](https://github.com/sadopc/gotermsql/releases) for Linux, macOS, and Windows.
 
 ### Build from repo
 
