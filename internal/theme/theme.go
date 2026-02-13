@@ -155,7 +155,8 @@ func newDefaultTheme() *Theme {
 			Foreground(lipgloss.Color("#569CD6")).
 			Background(lipgloss.Color("#252526")),
 		ResultsCell: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#D4D4D4")),
+			Foreground(lipgloss.Color("#D4D4D4")).
+			Padding(0, 1),
 		ResultsSelectedRow: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#FFFFFF")).
 			Background(lipgloss.Color("#264F78")),
@@ -336,7 +337,8 @@ func newLightTheme() *Theme {
 			Foreground(lipgloss.Color("#0451A5")).
 			Background(lipgloss.Color("#F3F3F3")),
 		ResultsCell: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#1E1E1E")),
+			Foreground(lipgloss.Color("#1E1E1E")).
+			Padding(0, 1),
 		ResultsSelectedRow: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#FFFFFF")).
 			Background(lipgloss.Color("#0060C0")),
@@ -518,7 +520,8 @@ func newMonokaiTheme() *Theme {
 			Foreground(lipgloss.Color("#A6E22E")).
 			Background(lipgloss.Color("#3E3D32")),
 		ResultsCell: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#F8F8F2")),
+			Foreground(lipgloss.Color("#F8F8F2")).
+			Padding(0, 1),
 		ResultsSelectedRow: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#F8F8F2")).
 			Background(lipgloss.Color("#49483E")),

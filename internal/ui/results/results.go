@@ -531,23 +531,24 @@ func autoSizeColumns(cols []adapter.ColumnMeta, rows [][]string, maxWidth int) [
 		}
 	}
 
-	// Calculate total desired width. The table adds separators between
-	// columns (approximately 3 characters each: " | ").
-	separatorWidth := (numCols - 1) * 3
-	totalDesired := separatorWidth
+	// Calculate total desired width. The bubbles/table component adds no
+	// separator between columns; spacing comes from the Cell style's
+	// Padding(0, 1) which adds 2 characters per column (1 left + 1 right).
+	paddingWidth := numCols * 2
+	totalDesired := paddingWidth
 	for _, w := range widths {
 		totalDesired += w
 	}
 
 	// If the total exceeds the available width, scale columns down
 	// proportionally.
-	available := maxWidth - separatorWidth
+	available := maxWidth - paddingWidth
 	if available < numCols {
 		available = numCols
 	}
 
 	if totalDesired > maxWidth {
-		totalColWidth := totalDesired - separatorWidth
+		totalColWidth := totalDesired - paddingWidth
 		for i := range widths {
 			widths[i] = (widths[i] * available) / totalColWidth
 			if widths[i] < 2 {
