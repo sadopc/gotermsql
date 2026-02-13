@@ -180,7 +180,7 @@ func (m Model) View() string {
 
 	// Empty result set.
 	if len(m.columns) == 0 && len(m.rows) == 0 && m.message == "" {
-		placeholder := th.MutedText.Render("  No results")
+		placeholder := th.MutedText.Render("  No results — write a query and press F5 to execute")
 		return m.wrapBorder(placeholder, contentHeight)
 	}
 

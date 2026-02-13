@@ -12,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/sadopc/gotermsql/internal/adapter"
@@ -115,24 +116,72 @@ func (c *pgConn) clearCancel() {
 // ---------------------------------------------------------------------------
 
 func (c *pgConn) Databases(ctx context.Context) ([]schema.Database, error) {
-	rows, err := c.pool.Query(ctx,
+	// List all non-template databases.
+	dbRows, err := c.pool.Query(ctx,
 		`SELECT datname FROM pg_database
 		 WHERE datistemplate = false
 		 ORDER BY datname`)
 	if err != nil {
 		return nil, fmt.Errorf("databases: %w", err)
 	}
+	defer dbRows.Close()
+
+	var dbNames []string
+	for dbRows.Next() {
+		var name string
+		if err := dbRows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("databases scan: %w", err)
+		}
+		dbNames = append(dbNames, name)
+	}
+	if err := dbRows.Err(); err != nil {
+		return nil, err
+	}
+
+	// For the connected database, load schemas and tables.
+	// PostgreSQL only allows querying information_schema for the current database.
+	var dbs []schema.Database
+	for _, name := range dbNames {
+		db := schema.Database{Name: name}
+
+		if name == c.dbName {
+			schemas, err := c.loadSchemas(ctx, name)
+			if err == nil {
+				db.Schemas = schemas
+			}
+		}
+
+		dbs = append(dbs, db)
+	}
+	return dbs, nil
+}
+
+// loadSchemas queries the user-visible schemas and their tables for the connected database.
+func (c *pgConn) loadSchemas(ctx context.Context, dbName string) ([]schema.Schema, error) {
+	rows, err := c.pool.Query(ctx,
+		`SELECT schema_name FROM information_schema.schemata
+		 WHERE catalog_name = $1
+		   AND schema_name NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+		 ORDER BY schema_name`, dbName)
+	if err != nil {
+		return nil, fmt.Errorf("schemas: %w", err)
+	}
 	defer rows.Close()
 
-	var dbs []schema.Database
+	var schemas []schema.Schema
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {
-			return nil, fmt.Errorf("databases scan: %w", err)
+			return nil, fmt.Errorf("schemas scan: %w", err)
 		}
-		dbs = append(dbs, schema.Database{Name: name})
+
+		tables, _ := c.Tables(ctx, dbName, name)
+		schemas = append(schemas, schema.Schema{
+			Name:   name,
+			Tables: tables,
+		})
 	}
-	return dbs, rows.Err()
+	return schemas, rows.Err()
 }
 
 func (c *pgConn) Tables(ctx context.Context, db, schemaName string) ([]schema.Table, error) {
@@ -816,6 +865,15 @@ func valueToString(v any) string {
 			}
 		}
 		return "{" + strings.Join(parts, ",") + "}"
+	case pgtype.Numeric:
+		dv, err := val.Value()
+		if err != nil || dv == nil {
+			return ""
+		}
+		if s, ok := dv.(string); ok {
+			return s
+		}
+		return fmt.Sprintf("%v", dv)
 	default:
 		return fmt.Sprintf("%v", v)
 	}

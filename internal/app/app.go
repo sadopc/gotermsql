@@ -319,7 +319,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case autocomplete.SelectedMsg:
 		ts := m.activeTabState()
 		if ts != nil {
-			ts.Editor.InsertText(msg.Text)
+			ts.Editor.ReplaceWord(msg.Text, msg.PrefixLen)
 		}
 
 	case connmgr.ConnectRequestMsg:

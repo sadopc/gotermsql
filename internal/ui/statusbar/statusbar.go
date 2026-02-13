@@ -106,7 +106,7 @@ func (m Model) View() string {
 		left = th.StatusBarKey.Render(" disconnected ")
 	}
 
-	// Center section: query time + row count or message
+	// Center section: query time + row count or message or key hints
 	var center string
 	if m.message != "" {
 		if m.isError {
@@ -120,6 +120,18 @@ func (m Model) View() string {
 		if m.rowCount >= 0 {
 			center += th.StatusBarValue.Render(fmt.Sprintf(" %s rows ", formatCount(m.rowCount)))
 		}
+	} else {
+		// Show key hints when idle
+		hintKey := th.StatusBarValue
+		hintSep := th.StatusBar
+		center = hintKey.Render("F5") +
+			hintSep.Render(" Run ") +
+			hintKey.Render("Ctrl+Q") +
+			hintSep.Render(" Quit ") +
+			hintKey.Render("Tab") +
+			hintSep.Render(" Switch pane ") +
+			hintKey.Render("F1") +
+			hintSep.Render(" Help ")
 	}
 
 	// Right section: key mode + cursor position

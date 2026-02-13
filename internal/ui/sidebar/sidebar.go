@@ -117,6 +117,16 @@ func (m Model) View() string {
 
 	th := theme.Current
 
+	// Account for border (left + right = 2, top + bottom = 2).
+	innerW := m.width - 2
+	innerH := m.height - 2
+	if innerW < 1 {
+		innerW = 1
+	}
+	if innerH < 1 {
+		innerH = 1
+	}
+
 	// Title
 	title := " Schema Browser "
 	var titleStyle lipgloss.Style
@@ -125,20 +135,20 @@ func (m Model) View() string {
 	} else {
 		titleStyle = th.SidebarTitle
 	}
-	titleLine := titleStyle.Width(m.width - 2).Render(title)
+	titleLine := titleStyle.Width(innerW).Render(title)
 
 	if m.loading {
 		content := titleLine + "\n\n  Loading schema..."
-		return m.borderStyle().Width(m.width).Height(m.height).Render(content)
+		return m.borderStyle().Width(innerW).Height(innerH).Render(content)
 	}
 
 	if len(m.flat) == 0 {
 		content := titleLine + "\n\n  No schema loaded.\n  Connect to a database."
-		return m.borderStyle().Width(m.width).Height(m.height).Render(content)
+		return m.borderStyle().Width(innerW).Height(innerH).Render(content)
 	}
 
-	// Render visible nodes
-	contentHeight := m.height - 3 // border + title + padding
+	// Render visible nodes: innerH - 1 for the title line.
+	contentHeight := innerH - 1
 	if contentHeight < 1 {
 		contentHeight = 1
 	}
@@ -156,7 +166,7 @@ func (m Model) View() string {
 	}
 
 	content := titleLine + "\n" + strings.Join(lines, "\n")
-	return m.borderStyle().Width(m.width).Height(m.height).Render(content)
+	return m.borderStyle().Width(innerW).Height(innerH).Render(content)
 }
 
 func (m Model) renderNode(node *TreeNode, selected bool, th *theme.Theme) string {

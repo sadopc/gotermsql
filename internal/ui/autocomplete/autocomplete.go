@@ -13,7 +13,8 @@ const maxVisible = 5
 
 // SelectedMsg is sent when an autocomplete item is selected.
 type SelectedMsg struct {
-	Text string
+	Text      string // full completion label
+	PrefixLen int    // length of the prefix already typed (to be replaced)
 }
 
 // DismissMsg is sent when autocomplete is dismissed.
@@ -69,13 +70,11 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		case "enter", "tab":
 			if m.selected < len(m.filtered) {
 				item := m.filtered[m.selected]
-				text := item.Label
-				// Remove the prefix already typed
-				if len(m.prefix) > 0 && strings.HasPrefix(strings.ToLower(text), strings.ToLower(m.prefix)) {
-					text = text[len(m.prefix):]
-				}
+				prefixLen := len(m.prefix)
 				m.visible = false
-				return m, func() tea.Msg { return SelectedMsg{Text: text} }
+				return m, func() tea.Msg {
+					return SelectedMsg{Text: item.Label, PrefixLen: prefixLen}
+				}
 			}
 
 		case "esc", "ctrl+c":
@@ -140,6 +139,15 @@ func (m Model) View() string {
 func (m *Model) Trigger(text string, cursorPos int) {
 	if m.engine == nil {
 		return
+	}
+
+	// Don't trigger after statement-ending semicolons.
+	if cursorPos > 0 && cursorPos <= len(text) {
+		ch := text[cursorPos-1]
+		if ch == ';' {
+			m.visible = false
+			return
+		}
 	}
 
 	items := m.engine.Complete(text, cursorPos)

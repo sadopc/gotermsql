@@ -32,7 +32,7 @@ type Model struct {
 // the editor with a tab.
 func New(id int) Model {
 	ta := textarea.New()
-	ta.Placeholder = "Enter SQL query..."
+	ta.Placeholder = "Enter SQL query... (F5 to run, Ctrl+Space for completions)"
 	ta.ShowLineNumbers = true
 	ta.CharLimit = 0 // unlimited
 
@@ -220,17 +220,9 @@ func (m Model) ID() int {
 	return m.id
 }
 
-// InsertText inserts text at the current cursor position. This is useful for
+// InsertText inserts text at the end of the editor content. This is useful for
 // inserting table names or column names from the sidebar.
 func (m *Model) InsertText(text string) {
-	// textarea does not expose an InsertRune/InsertString method directly.
-	// We simulate insertion by focusing, setting the value with the text
-	// appended at the current cursor position. A simple approach: append to
-	// the current value (at the end). For proper cursor-position insertion
-	// we would need access to textarea internals.
-	//
-	// The bubbles textarea exposes InsertString (added in newer versions).
-	// Fall back to appending if that is unavailable.
 	current := m.textarea.Value()
 	if current == "" {
 		m.textarea.SetValue(text)
@@ -243,5 +235,17 @@ func (m *Model) InsertText(text string) {
 		}
 		m.textarea.SetValue(current + text)
 	}
+	m.modified = true
+}
+
+// ReplaceWord replaces the last replaceLen characters with the given text.
+// Used by autocomplete to replace the typed prefix with the full completion.
+func (m *Model) ReplaceWord(text string, replaceLen int) {
+	current := m.textarea.Value()
+	if replaceLen > len(current) {
+		replaceLen = len(current)
+	}
+	// Remove the prefix that was already typed and append the full completion
+	m.textarea.SetValue(current[:len(current)-replaceLen] + text)
 	m.modified = true
 }

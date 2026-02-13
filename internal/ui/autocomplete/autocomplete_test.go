@@ -189,9 +189,12 @@ func TestUpdate_Enter(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected SelectedMsg, got %T", msg)
 	}
-	// "users" with prefix "us" should give "ers" as remaining text.
-	if selMsg.Text != "ers" {
-		t.Fatalf("expected 'ers', got %q", selMsg.Text)
+	// Full label should be returned along with prefix length.
+	if selMsg.Text != "users" {
+		t.Fatalf("expected 'users', got %q", selMsg.Text)
+	}
+	if selMsg.PrefixLen != 2 {
+		t.Fatalf("expected PrefixLen 2, got %d", selMsg.PrefixLen)
 	}
 }
 
@@ -211,9 +214,12 @@ func TestUpdate_Enter_NoPrefixMatch(t *testing.T) {
 	}
 	msg := cmd()
 	selMsg := msg.(SelectedMsg)
-	// prefix "xyz" doesn't match "SELECT" prefix, so full label is returned.
+	// Full label is always returned; PrefixLen reflects the prefix length.
 	if selMsg.Text != "SELECT" {
 		t.Fatalf("expected 'SELECT', got %q", selMsg.Text)
+	}
+	if selMsg.PrefixLen != 3 {
+		t.Fatalf("expected PrefixLen 3, got %d", selMsg.PrefixLen)
 	}
 }
 
