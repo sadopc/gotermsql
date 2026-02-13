@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1b26"/>
+      <stop offset="100%" style="stop-color:#16161e"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#7aa2f7"/>
+      <stop offset="100%" style="stop-color:#73daca"/>
+    </linearGradient>
+    <linearGradient id="greenAccent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#9ece6a"/>
+      <stop offset="100%" style="stop-color:#73daca"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1280" height="640" fill="url(#bg)"/>
+
+  <!-- Subtle grid pattern for terminal feel -->
+  <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+    <rect width="40" height="40" fill="none"/>
+    <line x1="0" y1="40" x2="40" y2="40" stroke="#1e1f2e" stroke-width="0.5"/>
+    <line x1="40" y1="0" x2="40" y2="40" stroke="#1e1f2e" stroke-width="0.5"/>
+  </pattern>
+  <rect width="1280" height="640" fill="url(#grid)" opacity="0.6"/>
+
+  <!-- Top decorative bar -->
+  <rect x="0" y="0" width="1280" height="3" fill="url(#accent)"/>
+
+  <!-- Terminal window chrome dots -->
+  <circle cx="48" cy="32" r="7" fill="#ff5f57" opacity="0.9"/>
+  <circle cx="72" cy="32" r="7" fill="#febc2e" opacity="0.9"/>
+  <circle cx="96" cy="32" r="7" fill="#28c840" opacity="0.9"/>
+
+  <!-- Prompt symbol -->
+  <text x="60" y="130" font-family="'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', Consolas, monospace" font-size="42" fill="#565f89" opacity="0.6">$_</text>
+
+  <!-- Main title -->
+  <text x="640" y="165" font-family="'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', Consolas, monospace" font-size="88" font-weight="bold" fill="url(#accent)" text-anchor="middle" letter-spacing="-2">gotermsql</text>
+
+  <!-- Tagline -->
+  <text x="640" y="220" font-family="'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', Consolas, monospace" font-size="30" fill="#a9b1d6" text-anchor="middle" letter-spacing="4">Terminal SQL IDE for Go</text>
+
+  <!-- Divider line -->
+  <line x1="440" y1="255" x2="840" y2="255" stroke="#7aa2f7" stroke-width="1.5" opacity="0.3"/>
+
+  <!-- Feature cards - 2x2 grid -->
+  <!-- Card 1: Single Binary -->
+  <rect x="100" y="290" width="520" height="80" rx="8" fill="#1e1f2e" stroke="#292e42" stroke-width="1"/>
+  <text x="140" y="340" font-family="'SF Mono', 'Fira Code', Consolas, monospace" font-size="28" fill="#73daca">&#x25A3;</text>
+  <text x="180" y="338" font-family="'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace" font-size="24" font-weight="bold" fill="#c0caf5">Single Binary</text>
+  <text x="180" y="362" font-family="'SF Mono', 'Fira Code', Consolas, monospace" font-size="15" fill="#565f89">Zero deps, just download and run</text>
+
+  <!-- Card 2: Multi-Database -->
+  <rect x="660" y="290" width="520" height="80" rx="8" fill="#1e1f2e" stroke="#292e42" stroke-width="1"/>
+  <text x="700" y="340" font-family="'SF Mono', 'Fira Code', Consolas, monospace" font-size="28" fill="#7aa2f7">&#x29C9;</text>
+  <text x="740" y="338" font-family="'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace" font-size="24" font-weight="bold" fill="#c0caf5">Multi-Database</text>
+  <text x="740" y="362" font-family="'SF Mono', 'Fira Code', Consolas, monospace" font-size="15" fill="#565f89">PostgreSQL | MySQL | SQLite | DuckDB</text>
+
+  <!-- Card 3: Vim Keybindings -->
+  <rect x="100" y="390" width="520" height="80" rx="8" fill="#1e1f2e" stroke="#292e42" stroke-width="1"/>
+  <text x="140" y="440" font-family="'SF Mono', 'Fira Code', Consolas, monospace" font-size="28" fill="#bb9af7">&#x2328;</text>
+  <text x="180" y="438" font-family="'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace" font-size="24" font-weight="bold" fill="#c0caf5">Vim Keybindings</text>
+  <text x="180" y="462" font-family="'SF Mono', 'Fira Code', Consolas, monospace" font-size="15" fill="#565f89">Full modal editing in your terminal</text>
+
+  <!-- Card 4: Streaming Results -->
+  <rect x="660" y="390" width="520" height="80" rx="8" fill="#1e1f2e" stroke="#292e42" stroke-width="1"/>
+  <text x="700" y="440" font-family="'SF Mono', 'Fira Code', Consolas, monospace" font-size="28" fill="#9ece6a">&#x21F6;</text>
+  <text x="740" y="438" font-family="'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace" font-size="24" font-weight="bold" fill="#c0caf5">Streaming Results</text>
+  <text x="740" y="462" font-family="'SF Mono', 'Fira Code', Consolas, monospace" font-size="15" fill="#565f89">Query millions of rows, constant memory</text>
+
+  <!-- SQL snippet decoration -->
+  <text x="640" y="535" font-family="'SF Mono', 'Fira Code', Consolas, monospace" font-size="18" text-anchor="middle" opacity="0.25" fill="#7aa2f7">SELECT * FROM productivity WHERE tool = 'gotermsql' ORDER BY joy DESC;</text>
+
+  <!-- Bottom divider -->
+  <line x1="440" y1="565" x2="840" y2="565" stroke="#7aa2f7" stroke-width="1" opacity="0.2"/>
+
+  <!-- GitHub URL -->
+  <text x="640" y="600" font-family="'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace" font-size="20" fill="#565f89" text-anchor="middle" letter-spacing="1">github.com/sadopc/gotermsql</text>
+
+  <!-- Bottom decorative bar -->
+  <rect x="0" y="637" width="1280" height="3" fill="url(#greenAccent)"/>
+</svg>

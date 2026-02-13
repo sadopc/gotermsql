@@ -1,8 +1,34 @@
 # gotermsql
 
+[![Go Report Card](https://goreportcard.com/badge/github.com/sadopc/gotermsql)](https://goreportcard.com/report/github.com/sadopc/gotermsql)
+[![Go Reference](https://pkg.go.dev/badge/github.com/sadopc/gotermsql.svg)](https://pkg.go.dev/github.com/sadopc/gotermsql)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Latest Release](https://img.shields.io/github/v/release/sadopc/gotermsql)](https://github.com/sadopc/gotermsql/releases)
+
 A full-featured terminal SQL IDE written in Go. Single binary, zero config, multi-database.
 
 ![demo](demo.gif)
+
+## Why gotermsql?
+
+| | gotermsql | pgcli/mycli | usql | lazysql | Harlequin |
+|---|---|---|---|---|---|
+| Single binary, zero deps | **Yes** | No (Python) | Yes (Go) | Yes (Go) | No (Python) |
+| Multi-database | **4 databases** | 1 each | Many (CLI only) | 3 | 10+ (plugins) |
+| Schema browser | **Yes** | No | No | Yes | Yes |
+| Autocomplete | **Context-aware** | Yes | No | No | Yes |
+| Streaming large results | **Yes** | No | No | No | Yes (Arrow) |
+| Vim keybindings | **Full modal** | Partial | No | No | Limited |
+| Syntax highlighting | **Yes** | Yes | No | No | Yes |
+| Multi-tab editing | **Yes** | No | No | No | Yes |
+| Instant startup | **Yes** | No | Yes | Yes | No |
+
+- **Single binary, zero dependencies** — no Python, no Node, no Docker. Download and run.
+- **Instant startup** — compiled Go, not an interpreted runtime.
+- **Multi-database with one tool** — PostgreSQL, MySQL, SQLite, DuckDB.
+- **Streaming results** — query billion-row tables without running out of memory.
+- **Real vim mode** — full Normal/Insert/Visual modal editing, not just hjkl remaps.
+- **Batch schema introspection** — PostgreSQL and MySQL load schemas in 3 queries, not N+1 per table.
 
 ## Features
 
