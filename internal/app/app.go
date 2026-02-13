@@ -775,14 +775,16 @@ func (m *Model) updateLayout() {
 	// Connection manager
 	m.connMgr.SetSize(m.width, m.height)
 
-	// Resize active tab state
+	// Resize components
+	mainHeight := m.height - 3 // tab bar + status bar estimate
+	mainWidth := m.width
+	if m.showSidebar {
+		m.sidebar.SetSize(m.sidebarWidth, mainHeight)
+		mainWidth = m.width - m.sidebarWidth
+	}
+
 	ts := m.activeTabState()
 	if ts != nil {
-		mainHeight := m.height - 3 // tab bar + status bar estimate
-		mainWidth := m.width
-		if m.showSidebar {
-			mainWidth = m.width - m.sidebarWidth
-		}
 		editorH := mainHeight * m.editorHeight / 100
 		resultsH := mainHeight - editorH
 		ts.Editor.SetSize(mainWidth, editorH)
