@@ -22,6 +22,8 @@ Run a single test:
 go test ./internal/completion/ -run TestFuzzyMatch
 ```
 
+`make test-race` exceeds Go's default 10-minute test timeout because `TestExecuteStreaming_10MillionRows` (SQLite adapter) is extremely slow under the race detector. That test skips under `-short`, so use `go test -race -short ./...` for race checks.
+
 PostgreSQL integration tests require a running instance and `gotermsql_test` database:
 ```bash
 go test ./internal/adapter/postgres/ -run TestIntegration -v
@@ -29,7 +31,7 @@ GOTERMSQL_PG_DSN="postgres://user:pass@host/db" go test ./internal/adapter/postg
 ```
 Integration tests auto-skip if PostgreSQL is unavailable.
 
-Version info is injected via LDFLAGS from git tags/commit/date. Releases use `make build-all` + `gh release create` (targets: linux/darwin amd64+arm64, windows amd64). Homebrew tap at `sadopc/homebrew-tap`. Release archives follow naming `gotermsql_X.Y.Z_{os}_{arch}.tar.gz`.
+Version info is injected via LDFLAGS from git tags/commit/date. Releases use `make build-all` + `gh release create` (targets: linux/darwin amd64+arm64, windows amd64). Homebrew tap at `sadopc/homebrew-tap`. A `.goreleaser.yaml` with the same targets also exists. Release archives follow naming `gotermsql_X.Y.Z_{os}_{arch}.tar.gz`.
 
 ## Architecture
 
@@ -82,7 +84,7 @@ func init() { adapter.Register(&Adapter{}) }
 
 Imported as blank imports in `cmd/gotermsql/main.go` to trigger registration.
 
-**`Connection.Databases()` contract:** Must return `[]schema.Database` with `Schemas` and `Tables` populated for the connected database. PostgreSQL can only introspect the current database via `information_schema`; other databases appear as names only. SQLite returns a single database with `"main"` schema.
+**`Connection.Databases()` contract:** Must return `[]schema.Database` with `Schemas` and `Tables` populated for the connected database. PostgreSQL can only introspect the current database via `information_schema`; other databases appear as names only. MySQL gives the connected database a single schema with the same name as the database. SQLite returns a single database with `"main"` schema. `loadSchema()` only fetches columns/indexes/FKs for tables already listed in `db.Schemas[].Tables`. An adapter that returns names only therefore produces an empty sidebar tree and no column autocomplete (this was the MySQL bug in issue #1). The sidebar auto-expands a database when it is the only one with schemas loaded.
 
 **`BatchIntrospector` interface (optional):** Connections can implement `AllColumns()`, `AllIndexes()`, `AllForeignKeys()` methods that return `map[tableName][]T` for an entire schema in a single query each. `loadSchema()` type-asserts for this interface and uses batch methods when available (3 queries per schema vs 3×N per table). PostgreSQL and MySQL both implement it.
 
@@ -94,6 +96,12 @@ Two layers with different word-break rules:
 
 - **`internal/completion/completion.go`** (Engine): Determines context from SQL text (FROM → tables, SELECT → columns+functions, dot → qualified columns). Thread-safe with `sync.RWMutex`. Dot is NOT a word break here (enables `table.column` lookup). Fuzzy matching ranks candidates.
 - **`internal/ui/autocomplete/autocomplete.go`** (UI Model): Manages the visible dropdown. Dot IS a word break here (for prefix extraction). Sends `SelectedMsg{Text, PrefixLen}` — the full label plus how many chars to replace.
+
+**Ranking (`fuzzyMatch`):** Stable sort by (1) literal case-insensitive prefix match, (2) kind: column → keyword → table/view → function, (3) fuzzy score. Existing tests depend on this order (e.g. `sel` → `SELECT` before a table named `selections`; `WHERE First` → column `FirstName` before `FIRST_VALUE`).
+
+**Table refs & aliases:** `parseTableRefs()` extracts `{Name, Alias}` from `FROM`/`JOIN` clauses (including comma lists and `AS`). It is anchored at each keyword position, so `FROM a JOIN b` finds both tables. A word after the table name counts as an alias only if it is not in the dialect keyword list. Dot access (`e.`) resolves aliases before looking up columns. Table lookup falls back to a case-insensitive match.
+
+**Cursor limitation:** The app always passes `len(text)` as the cursor position, so completion only works at the end of the editor text. Completion in the middle of the text would also require changing `ReplaceWord`.
 
 **Accepting completions:** The app calls `editor.ReplaceWord(text, prefixLen)` which removes the typed prefix from the end and appends the full completion.
 
