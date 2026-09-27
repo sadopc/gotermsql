@@ -623,3 +623,29 @@ func TestInit(t *testing.T) {
 		t.Fatal("expected nil cmd from Init")
 	}
 }
+
+func TestBuildTree_ExpandsConnectedDatabase(t *testing.T) {
+	// MySQL-style: many databases, only the connected one has its schema
+	// loaded, and the schema is named after the database.
+	dbs := []schema.Database{
+		{Name: "information_schema"},
+		{
+			Name: "company",
+			Schemas: []schema.Schema{
+				{Name: "company", Tables: []schema.Table{{Name: "Employee"}}},
+			},
+		},
+		{Name: "mysql"},
+	}
+	nodes := buildTree(dbs)
+
+	if nodes[0].Expanded || nodes[2].Expanded {
+		t.Fatal("expected databases without schemas to stay collapsed")
+	}
+	if !nodes[1].Expanded {
+		t.Fatal("expected connected database to be auto-expanded")
+	}
+	if !nodes[1].Children[0].Expanded {
+		t.Fatal("expected schema named after its database to be auto-expanded")
+	}
+}

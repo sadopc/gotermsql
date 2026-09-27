@@ -361,12 +361,22 @@ func quoteIdentifier(s string) string {
 func buildTree(databases []schema.Database) []*TreeNode {
 	var nodes []*TreeNode
 
+	// Adapters like MySQL and PostgreSQL list every database but only load
+	// schemas for the connected one. If exactly one database has schemas,
+	// it is the connected database, so auto-expand it.
+	withSchemas := 0
+	for _, db := range databases {
+		if len(db.Schemas) > 0 {
+			withSchemas++
+		}
+	}
+
 	for _, db := range databases {
 		dbNode := &TreeNode{
 			Label:    db.Name,
 			Kind:     NodeDatabase,
 			Database: db.Name,
-			Expanded: len(databases) == 1, // auto-expand if single database
+			Expanded: len(databases) == 1 || (withSchemas == 1 && len(db.Schemas) > 0),
 		}
 
 		for _, s := range db.Schemas {
@@ -376,7 +386,7 @@ func buildTree(databases []schema.Database) []*TreeNode {
 				Database: db.Name,
 				Schema:   s.Name,
 				Depth:    1,
-				Expanded: s.Name == "public" || s.Name == "main",
+				Expanded: s.Name == "public" || s.Name == "main" || s.Name == db.Name,
 			}
 
 			// Tables group

@@ -154,15 +154,33 @@ func (c *mysqlConn) Databases(ctx context.Context) ([]schema.Database, error) {
 	}
 	defer rows.Close()
 
-	var dbs []schema.Database
+	var names []string
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {
 			return nil, err
 		}
-		dbs = append(dbs, schema.Database{Name: name})
+		names = append(names, name)
 	}
-	return dbs, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+
+	// For the connected database, load its tables. In MySQL a schema is the
+	// database itself, so it gets a single schema with the same name.
+	dbs := make([]schema.Database, 0, len(names))
+	for _, name := range names {
+		db := schema.Database{Name: name}
+		if c.dbName != "" && name == c.dbName {
+			tables, err := c.Tables(ctx, name, "")
+			if err == nil {
+				db.Schemas = []schema.Schema{{Name: name, Tables: tables}}
+			}
+		}
+		dbs = append(dbs, db)
+	}
+	return dbs, nil
 }
 
 func (c *mysqlConn) Tables(ctx context.Context, db, schemaName string) ([]schema.Table, error) {
