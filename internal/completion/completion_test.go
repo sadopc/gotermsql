@@ -1368,3 +1368,144 @@ func TestComplete_ResultsCappedAt50(t *testing.T) {
 		t.Errorf("results should be capped at 50, got %d", len(items))
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Issue #1: MySQL-style schema, ranking, case-insensitive lookup, aliases
+// ---------------------------------------------------------------------------
+
+func newEmployeeEngine() *Engine {
+	e := NewEngine("mysql")
+	e.UpdateSchema([]schema.Database{
+		{
+			Name: "company",
+			Schemas: []schema.Schema{
+				{
+					Name: "company",
+					Tables: []schema.Table{
+						{
+							Name: "Employee",
+							Columns: []schema.Column{
+								{Name: "EmployeeID", Type: "int", IsPK: true},
+								{Name: "BranchID", Type: "int", Nullable: true},
+								{Name: "FirstName", Type: "varchar(100)", Nullable: true},
+								{Name: "LastName", Type: "varchar(100)", Nullable: true},
+							},
+						},
+						{
+							Name: "Branch",
+							Columns: []schema.Column{
+								{Name: "BranchID", Type: "int", IsPK: true},
+								{Name: "BranchName", Type: "varchar(100)", Nullable: true},
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+	return e
+}
+
+func TestComplete_ColumnsRankAboveFunctions(t *testing.T) {
+	e := newEmployeeEngine()
+	tests := []struct {
+		sql  string
+		want string
+	}{
+		{"SELECT * FROM Employee WHERE First", "FirstName"},
+		{"SELECT * FROM Employee WHERE Last", "LastName"},
+		{"SELECT * FROM Employee WHERE Employee", "EmployeeID"},
+		{"SELECT * FROM Employee WHERE F", "FirstName"},
+	}
+	for _, tt := range tests {
+		items := e.Complete(tt.sql, len(tt.sql))
+		if len(items) == 0 {
+			t.Errorf("%q: no completions", tt.sql)
+			continue
+		}
+		if items[0].Label != tt.want || items[0].Kind != adapter.CompletionColumn {
+			t.Errorf("%q: first item = %q (kind %v), want column %q; all: %v",
+				tt.sql, items[0].Label, items[0].Kind, tt.want, collectLabels(items))
+		}
+	}
+}
+
+func TestComplete_KeywordRanksAboveTableAtStatementStart(t *testing.T) {
+	e := NewEngine("postgres")
+	e.UpdateSchema([]schema.Database{{
+		Name:    "db",
+		Schemas: []schema.Schema{{Name: "public", Tables: []schema.Table{{Name: "selections"}}}},
+	}})
+	items := e.Complete("sel", 3)
+	if len(items) == 0 || items[0].Label != "SELECT" {
+		t.Errorf("expected SELECT first, got %v", collectLabels(items))
+	}
+}
+
+func TestComplete_CaseInsensitiveTableLookup(t *testing.T) {
+	e := newEmployeeEngine()
+	sql := "SELECT * FROM employee WHERE fi"
+	items := e.Complete(sql, len(sql))
+	if len(items) == 0 || items[0].Label != "FirstName" {
+		t.Errorf("expected FirstName first, got %v", collectLabels(items))
+	}
+}
+
+func TestComplete_AliasDotAccess(t *testing.T) {
+	e := newEmployeeEngine()
+
+	sql := "SELECT * FROM Employee e WHERE e."
+	items := e.Complete(sql, len(sql))
+	for _, want := range []string{"EmployeeID", "BranchID", "FirstName", "LastName"} {
+		if !containsLabel(items, want) {
+			t.Errorf("alias e.: missing %q, got %v", want, collectLabels(items))
+		}
+	}
+
+	sql = "SELECT * FROM Employee AS e JOIN Branch AS b ON b."
+	items = e.Complete(sql, len(sql))
+	if !containsLabel(items, "BranchName") || containsLabel(items, "FirstName") {
+		t.Errorf("alias b.: expected Branch columns only, got %v", collectLabels(items))
+	}
+
+	sql = "SELECT * FROM Employee E, Branch br WHERE br.Bra"
+	items = e.Complete(sql, len(sql))
+	if len(items) == 0 || !strings.HasPrefix(items[0].Label, "Branch") {
+		t.Errorf("alias br.Bra: expected Branch columns, got %v", collectLabels(items))
+	}
+
+	sql = "SELECT * FROM Employee WHERE x."
+	if items = e.Complete(sql, len(sql)); len(items) != 0 {
+		t.Errorf("unknown qualifier x.: expected no completions, got %v", collectLabels(items))
+	}
+}
+
+func TestParseTableRefs(t *testing.T) {
+	e := newEmployeeEngine()
+	tests := []struct {
+		sql  string
+		want []tableRef
+	}{
+		{"SELECT * FROM Employee WHERE x = 1", []tableRef{{Name: "Employee"}}},
+		{"SELECT * FROM Employee e", []tableRef{{Name: "Employee", Alias: "e"}}},
+		{"SELECT * FROM Employee AS e", []tableRef{{Name: "Employee", Alias: "e"}}},
+		{"SELECT * FROM Employee JOIN Branch ON 1=1", []tableRef{{Name: "Employee"}, {Name: "Branch"}}},
+		{"SELECT * FROM Employee e LEFT JOIN Branch b ON e.BranchID = b.BranchID",
+			[]tableRef{{Name: "Employee", Alias: "e"}, {Name: "Branch", Alias: "b"}}},
+		{"SELECT * FROM a x, b AS y, c WHERE 1=1",
+			[]tableRef{{Name: "a", Alias: "x"}, {Name: "b", Alias: "y"}, {Name: "c"}}},
+		{"SELECT * FROM Employee ORDER BY 1", []tableRef{{Name: "Employee"}}},
+	}
+	for _, tt := range tests {
+		got := e.parseTableRefs(tt.sql)
+		if len(got) != len(tt.want) {
+			t.Errorf("%q: got %v, want %v", tt.sql, got, tt.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != tt.want[i] {
+				t.Errorf("%q: ref[%d] = %v, want %v", tt.sql, i, got[i], tt.want[i])
+			}
+		}
+	}
+}

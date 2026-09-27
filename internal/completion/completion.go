@@ -81,9 +81,9 @@ func (e *Engine) Complete(text string, cursorPos int) []adapter.CompletionItem {
 	// Find the current word being typed.
 	prefix, dotContext := extractPrefix(before)
 
-	// If we have a dot context (e.g., "t." or "users."), complete columns for that table.
+	// If we have a dot context (e.g., "t." or "users."), complete columns for that table or alias.
 	if dotContext != "" {
-		return e.completeDotAccess(dotContext, prefix)
+		return e.completeDotAccess(dotContext, prefix, text)
 	}
 
 	// Determine the context keyword preceding the current word.
@@ -228,53 +228,92 @@ func tokenize(text string) []string {
 	return strings.Fields(text)
 }
 
-// fromClauseRe matches FROM clauses and extracts table references.
-var fromClauseRe = regexp.MustCompile(`(?i)\bFROM\s+([\w."]+(?:\s+(?:AS\s+)?[\w]+)?(?:\s*,\s*[\w."]+(?:\s+(?:AS\s+)?[\w]+)?)*)`)
+// tableClauseRe finds FROM and JOIN keywords that introduce table references.
+var tableClauseRe = regexp.MustCompile(`(?i)\b(?:FROM|JOIN)\s+`)
 
-// joinClauseRe matches JOIN clauses and extracts the table name.
-var joinClauseRe = regexp.MustCompile(`(?i)\bJOIN\s+([\w."]+)`)
+// tableRefRe parses the text right after FROM/JOIN: the first table reference
+// with an optional alias, followed by any comma-separated references
+// (FROM a x, b y). It is applied separately at each keyword so that a
+// keyword captured as a candidate alias (e.g. "FROM a JOIN b") is still
+// found as the start of its own clause.
+var tableRefRe = regexp.MustCompile(`(?i)^([\w."]+)(?:\s+(?:AS\s+)?(\w+))?((?:\s*,\s*[\w."]+(?:\s+(?:AS\s+)?\w+)?)*)`)
+
+// tableListItemRe matches one ", table [AS] alias" item in a comma-separated FROM list.
+var tableListItemRe = regexp.MustCompile(`(?i),\s*([\w."]+)(?:\s+(?:AS\s+)?(\w+))?`)
+
+// aliasStopWords are keywords that may follow a table name but are never aliases,
+// in addition to the dialect keyword list.
+var aliasStopWords = []string{"USING", "NATURAL", "LATERAL", "WINDOW"}
+
+// tableRef is a table referenced in a FROM or JOIN clause, with its optional alias.
+type tableRef struct {
+	Name  string
+	Alias string
+}
+
+// parseTableRefs extracts table references and their aliases from FROM and JOIN clauses.
+func (e *Engine) parseTableRefs(text string) []tableRef {
+	stop := make(map[string]bool, len(e.keywords)+len(aliasStopWords))
+	for _, kw := range e.keywords {
+		stop[strings.ToUpper(kw)] = true
+	}
+	for _, kw := range aliasStopWords {
+		stop[kw] = true
+	}
+
+	var refs []tableRef
+	// add records a reference and reports whether its alias was accepted
+	// (false if the word after the table name is a keyword, not an alias).
+	add := func(name, alias string) bool {
+		name = strings.Trim(name, `"`)
+		ok := !stop[strings.ToUpper(alias)]
+		if !ok {
+			alias = ""
+		}
+		refs = append(refs, tableRef{Name: name, Alias: alias})
+		return ok
+	}
+
+	for _, loc := range tableClauseRe.FindAllStringIndex(text, -1) {
+		match := tableRefRe.FindStringSubmatch(text[loc[1]:])
+		if match == nil {
+			continue
+		}
+		// A keyword after the table name ends the clause, so ignore any list after it.
+		if !add(match[1], match[2]) {
+			continue
+		}
+		for _, item := range tableListItemRe.FindAllStringSubmatch(match[3], -1) {
+			add(item[1], item[2])
+		}
+	}
+	return refs
+}
 
 // parseFromTables extracts table names from FROM and JOIN clauses in the SQL text.
 func (e *Engine) parseFromTables(text string) []string {
 	var tables []string
 	seen := map[string]bool{}
-
-	// Extract FROM clause tables.
-	for _, match := range fromClauseRe.FindAllStringSubmatch(text, -1) {
-		if len(match) < 2 {
-			continue
-		}
-		// Split by comma for multi-table FROM.
-		parts := strings.Split(match[1], ",")
-		for _, part := range parts {
-			tokens := strings.Fields(strings.TrimSpace(part))
-			if len(tokens) > 0 {
-				name := strings.Trim(tokens[0], `"`)
-				if !seen[name] {
-					seen[name] = true
-					tables = append(tables, name)
-				}
-			}
+	for _, ref := range e.parseTableRefs(text) {
+		if !seen[ref.Name] {
+			seen[ref.Name] = true
+			tables = append(tables, ref.Name)
 		}
 	}
-
-	// Extract JOIN clause tables.
-	for _, match := range joinClauseRe.FindAllStringSubmatch(text, -1) {
-		if len(match) < 2 {
-			continue
-		}
-		name := strings.Trim(match[1], `"`)
-		if !seen[name] {
-			seen[name] = true
-			tables = append(tables, name)
-		}
-	}
-
 	return tables
 }
 
 // completeDotAccess returns column completions for a dot-accessed table or alias.
-func (e *Engine) completeDotAccess(tableName, prefix string) []adapter.CompletionItem {
+// Aliases defined in the query's FROM/JOIN clauses are resolved to their table.
+func (e *Engine) completeDotAccess(qualifier, prefix, text string) []adapter.CompletionItem {
+	tableName := qualifier
+	for _, ref := range e.parseTableRefs(text) {
+		if ref.Alias != "" && strings.EqualFold(ref.Alias, qualifier) {
+			tableName = ref.Name
+			break
+		}
+	}
+
 	items := e.columnsForTable(tableName)
 	if prefix == "" {
 		return items
@@ -297,6 +336,13 @@ func (e *Engine) columnsForTable(tableName string) []adapter.CompletionItem {
 		key := s + "." + tableName
 		if cols, ok := e.tables[key]; ok {
 			return columnsToItems(tableName, cols)
+		}
+	}
+
+	// Fall back to a case-insensitive match (e.g. "employee" vs "Employee").
+	for key, cols := range e.tables {
+		if strings.EqualFold(key, tableName) {
+			return columnsToItems(key, cols)
 		}
 	}
 
@@ -431,8 +477,18 @@ func fuzzyMatch(prefix string, items []adapter.CompletionItem) []adapter.Complet
 
 	matches := fuzzy.FindFrom(lowerPrefix, lowerItems)
 
-	// Sort by score descending.
-	sort.Slice(matches, func(i, j int) bool {
+	// Rank literal prefix matches first, then by kind (columns, keywords,
+	// tables, functions), then by fuzzy score.
+	sort.SliceStable(matches, func(i, j int) bool {
+		pi := strings.HasPrefix(matches[i].Str, lowerPrefix)
+		pj := strings.HasPrefix(matches[j].Str, lowerPrefix)
+		if pi != pj {
+			return pi
+		}
+		ri, rj := kindRank(items[matches[i].Index].Kind), kindRank(items[matches[j].Index].Kind)
+		if ri != rj {
+			return ri < rj
+		}
 		return matches[i].Score > matches[j].Score
 	})
 
@@ -447,4 +503,20 @@ func fuzzyMatch(prefix string, items []adapter.CompletionItem) []adapter.Complet
 	}
 
 	return result
+}
+
+// kindRank orders completion kinds for ranking: lower ranks sort first.
+func kindRank(k adapter.CompletionKind) int {
+	switch k {
+	case adapter.CompletionColumn:
+		return 0
+	case adapter.CompletionKeyword:
+		return 1
+	case adapter.CompletionTable, adapter.CompletionView:
+		return 2
+	case adapter.CompletionFunction:
+		return 3
+	default:
+		return 4
+	}
 }
